@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: TeknoyCart Backend
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: clarencekirkmc@gmail.com
+    password: uvhxivkyoqcnhvim
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  datasource:
+    url: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
+    username: postgres.chmtvasbhkbrvydbajnd
+    password: Macapobre67
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate # Ensures no overwrite of existing Capstone 1 Supabase tables
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+jwt:
+  secret: YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS
+  expiration: 86400000 # 24 Hours in milliseconds

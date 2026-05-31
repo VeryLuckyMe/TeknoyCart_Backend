@@ -1,0 +1,17 @@
+# Maven build output
+target/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Optional: If you plan to push to a public GitHub repository,
+# uncomment the line below to protect your database & email passwords!
+# src/main/resources/application.yml
