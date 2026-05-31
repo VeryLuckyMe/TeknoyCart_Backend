@@ -1,11 +1,13 @@
 spring:
   application:
     name: TeknoyCart Backend
+  config:
+    import: optional:classpath:application-local.yml
   mail:
     host: smtp.gmail.com
     port: 587
     username: clarencekirkmc@gmail.com
-    password: uvhxivkyoqcnhvim
+    password: ${SPRING_MAIL_PASSWORD:YOUR_GMAIL_APP_PASSWORD}
     properties:
       mail:
         smtp:
@@ -15,7 +17,7 @@ spring:
   datasource:
     url: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
     username: postgres.chmtvasbhkbrvydbajnd
-    password: Macapobre67
+    password: ${SPRING_DATASOURCE_PASSWORD:YOUR_DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect

@@ -15,3 +15,4 @@ Thumbs.db
 # Optional: If you plan to push to a public GitHub repository,
 # uncomment the line below to protect your database & email passwords!
 # src/main/resources/application.yml
+src/main/resources/application-local.yml
