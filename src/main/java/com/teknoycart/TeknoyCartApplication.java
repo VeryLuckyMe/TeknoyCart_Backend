@@ -37,6 +37,43 @@ public class TeknoyCartApplication implements CommandLineRunner {
             // Ignore if already exists
         }
 
+        // Initialize Supabase Storage Buckets
+        try {
+            jdbcTemplate.execute("INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT (id) DO NOTHING");
+            jdbcTemplate.execute("INSERT INTO storage.buckets (id, name, public) VALUES ('chat-images', 'chat-images', true) ON CONFLICT (id) DO NOTHING");
+            System.out.println("====== Supabase storage buckets initialized successfully! ======");
+        } catch (Exception e) {
+            System.err.println("Could not initialize storage buckets: " + e.getMessage());
+        }
+
+        // Configure Storage Policies
+        try {
+            jdbcTemplate.execute(
+                "DO $$\n" +
+                "BEGIN\n" +
+                "    IF NOT EXISTS (\n" +
+                "        SELECT 1 FROM pg_policies \n" +
+                "        WHERE tablename = 'objects' AND schemaname = 'storage' AND policyname = 'Public Read Access'\n" +
+                "    ) THEN\n" +
+                "        CREATE POLICY \"Public Read Access\" ON storage.objects FOR SELECT USING (true);\n" +
+                "    END IF;\n" +
+                "    \n" +
+                "    IF NOT EXISTS (\n" +
+                "        SELECT 1 FROM pg_policies \n" +
+                "        WHERE tablename = 'objects' AND schemaname = 'storage' AND policyname = 'Authenticated Upload Access'\n" +
+                "    ) THEN\n" +
+                "        CREATE POLICY \"Authenticated Upload Access\" ON storage.objects FOR INSERT WITH CHECK (\n" +
+                "            bucket_id IN ('product-images', 'chat-images')\n" +
+                "        );\n" +
+                "    END IF;\n" +
+                "END\n" +
+                "$$;"
+            );
+            System.out.println("====== Supabase storage policies configured successfully! ======");
+        } catch (Exception e) {
+            System.err.println("Could not configure storage policies: " + e.getMessage());
+        }
+
         // System.out.println("====== STARTING SMTP TEST DISPATCH ON STARTUP ======");
         // try {
         //     emailService.sendVerificationEmail("clarencekirk.macapobre@cit.edu", "Clarence", "TEST_STARTUP_TOKEN");
