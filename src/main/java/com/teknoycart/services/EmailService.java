@@ -58,7 +58,7 @@ public class EmailService {
             // Sender can be custom-named, but will show as sent via Brevo.
             // Recipient can be ANY email address (no sandbox restrictions!)
             Map<String, Object> payload = Map.of(
-                "sender", Map.of("name", "TeknoyCart CIT-U", "email", "noreply@teknoycart.com"),
+                "sender", Map.of("name", "TeknoyCart CIT-U", "email", "clarencekirkmc@gmail.com"),
                 "to", List.of(Map.of("email", recipientEmail, "name", recipientName)),
                 "subject", "Verify Your TeknoyCart Account",
                 "htmlContent", htmlContent
