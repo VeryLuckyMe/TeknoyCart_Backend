@@ -131,6 +131,9 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("verified", userOpt.get().isVerified()));
     }
 
+    @Autowired
+    private com.teknoycart.security.JwtTokenProvider tokenProvider;
+
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@RequestBody User loginRequest) {
         String email = loginRequest.getEmail().toLowerCase().trim();
@@ -185,6 +188,12 @@ public class AuthController {
         user.setLockUntil(null);
         userRepository.save(user);
 
-        return ResponseEntity.ok(user);
+        // Generate stateless JWT session token signed using HMAC SHA-256
+        String token = tokenProvider.generateToken(user.getEmail(), user.getRole());
+
+        return ResponseEntity.ok(Map.of(
+            "token", token,
+            "user", user
+        ));
     }
 }

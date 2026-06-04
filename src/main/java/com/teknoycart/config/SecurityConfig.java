@@ -9,9 +9,16 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
+import com.teknoycart.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    @Autowired
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -33,6 +40,10 @@ public class SecurityConfig {
                 // 2. Or implement a JWT Authentication Filter to authenticate incoming requests!
                 .anyRequest().authenticated()
             );
+
+        // Register JWT validation filter before standard Spring authentication check
+        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 }
