@@ -53,13 +53,14 @@ public class EmailService {
                     + "  </p>"
                     + "</div>";
 
-            // Prepare JSON payload for Resend API
-            // Note: Since we are using a free Resend testing API key, the 'from' email must be onboarding@resend.dev.
-            // Under the free tier, we can send to any verified test email or our signup email (e.g. clarencekirk.macapobre@cit.edu if verified, or the registered account).
+            // Sandbox Fallback: Since this is a free developer Resend account, all emails must go to clarencekirkmc@gmail.com.
+            // But we display the original recipientEmail in the console and database cleanly.
+            String targetDeliveryEmail = "clarencekirkmc@gmail.com";
+
             Map<String, Object> payload = Map.of(
                 "from", "TeknoyCart <onboarding@resend.dev>",
-                "to", recipientEmail,
-                "subject", "Verify Your TeknoyCart Account",
+                "to", targetDeliveryEmail,
+                "subject", "Verify Your TeknoyCart Account (" + recipientEmail + ")",
                 "html", htmlContent
             );
 
