@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-
 import org.springframework.scheduling.annotation.Async;
 
 @Service
@@ -20,25 +19,16 @@ public class EmailService {
 
     @Async
     public void sendVerificationEmail(String recipientEmail, String recipientName, String verificationToken) {
-        if (mailSender == null) {
-            System.out.println("SMTP Mail Sender not configured. Verification Link: http://localhost:8080/api/auth/verify?token=" + verificationToken);
-            return;
-        }
-
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(senderEmail, "TeknoyCart CIT-U");
-            helper.setTo(recipientEmail);
-            helper.setSubject("Verify Your TeknoyCart Account");
-
-            // Premium HTML Email Template with CSS branding matching CIT-U
         String verifyUrl = "https://teknoycart-backend.onrender.com/api/auth/verify?token=" + verificationToken;
         System.out.println("=========================================================================");
         System.out.println("VERIFICATION LINK GENERATED FOR " + recipientEmail + ":");
         System.out.println(verifyUrl);
         System.out.println("=========================================================================");
+
+        if (mailSender == null) {
+            System.out.println("SMTP Mail Sender not configured. Verification Link: " + verifyUrl);
+            return;
+        }
 
         try {
             MimeMessage message = mailSender.createMimeMessage();
