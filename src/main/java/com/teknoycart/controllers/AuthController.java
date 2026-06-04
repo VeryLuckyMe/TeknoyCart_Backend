@@ -30,9 +30,9 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody User user) {
         String email = user.getEmail().toLowerCase().trim();
-        if (!email.endsWith("@cit.edu")) {
+        if (!email.endsWith("@cit.edu") && !email.endsWith("@gmail.com")) {
             return ResponseEntity.badRequest()
-                .body("Registration restricted to official Cebu Institute of Technology - University accounts.");
+                .body("Registration restricted to official Cebu Institute of Technology - University accounts or authorized testing accounts.");
         }
 
         if (userRepository.findByEmail(email).isPresent()) {
