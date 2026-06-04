@@ -153,7 +153,7 @@ public class AuthController {
 
         // 2. Check account lockout state
         if (user.isLocked()) {
-            if (user.getLockUntil() != null && LocalDateTime.now().isBefore(user.getLockUntil())) {
+            if (user.getLockUntil() != null && LocalDateTime.now(java.time.ZoneId.of("UTC")).isBefore(user.getLockUntil())) {
                 return ResponseEntity.status(403)
                     .body("Account is temporarily locked. Try again in 15 minutes.");
             } else {
@@ -171,7 +171,7 @@ public class AuthController {
 
             if (attempts >= 5) {
                 user.setLocked(true);
-                user.setLockUntil(LocalDateTime.now().plusMinutes(15));
+                user.setLockUntil(LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(15));
                 userRepository.save(user);
                 return ResponseEntity.status(403)
                     .body("Too many failed attempts. Account locked for 15 minutes.");
