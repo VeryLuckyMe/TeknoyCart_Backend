@@ -5,7 +5,7 @@ spring:
     import: optional:classpath:application-local.yml
   mail:
     host: smtp.gmail.com
-    port: 587
+    port: 465
     username: clarencekirkmc@gmail.com
     password: ${SPRING_MAIL_PASSWORD:YOUR_GMAIL_APP_PASSWORD}
     properties:
@@ -14,6 +14,12 @@ spring:
           auth: true
           starttls:
             enable: true
+          ssl:
+            enable: true
+          socketFactory:
+            port: 465
+            class: javax.net.ssl.SSLSocketFactory
+            fallback: false
   datasource:
     url: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
     username: postgres.chmtvasbhkbrvydbajnd

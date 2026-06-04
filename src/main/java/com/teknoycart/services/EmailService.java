@@ -7,6 +7,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import org.springframework.scheduling.annotation.Async;
+
 @Service
 public class EmailService {
 
@@ -16,6 +18,7 @@ public class EmailService {
     @Value("${spring.mail.username:noreply@teknoycart.com}")
     private String senderEmail;
 
+    @Async
     public void sendVerificationEmail(String recipientEmail, String recipientName, String verificationToken) {
         if (mailSender == null) {
             System.out.println("SMTP Mail Sender not configured. Verification Link: http://localhost:8080/api/auth/verify?token=" + verificationToken);
