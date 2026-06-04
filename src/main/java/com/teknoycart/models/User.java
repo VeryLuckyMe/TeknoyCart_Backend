@@ -28,6 +28,9 @@ public class User {
     @Column(name = "is_verified", nullable = false)
     private boolean isVerified = false;
 
+    @Column(name = "is_seller_verified", nullable = false)
+    private boolean isSellerVerified = false;
+
     @Column(name = "is_locked", nullable = false)
     private boolean isLocked = false;
 
@@ -64,6 +67,9 @@ public class User {
 
     public boolean isVerified() { return isVerified; }
     public void setVerified(boolean verified) { isVerified = verified; }
+
+    public boolean isSellerVerified() { return isSellerVerified; }
+    public void setSellerVerified(boolean sellerVerified) { isSellerVerified = sellerVerified; }
 
     public boolean isLocked() { return isLocked; }
     public void setLocked(boolean locked) { isLocked = locked; }
