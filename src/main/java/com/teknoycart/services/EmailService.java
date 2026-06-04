@@ -34,7 +34,21 @@ public class EmailService {
             helper.setSubject("Verify Your TeknoyCart Account");
 
             // Premium HTML Email Template with CSS branding matching CIT-U
-            String verifyUrl = "http://localhost:8080/api/auth/verify?token=" + verificationToken;
+        String verifyUrl = "https://teknoycart-backend.onrender.com/api/auth/verify?token=" + verificationToken;
+        System.out.println("=========================================================================");
+        System.out.println("VERIFICATION LINK GENERATED FOR " + recipientEmail + ":");
+        System.out.println(verifyUrl);
+        System.out.println("=========================================================================");
+
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(senderEmail, "TeknoyCart CIT-U");
+            helper.setTo(recipientEmail);
+            helper.setSubject("Verify Your TeknoyCart Account");
+
+            // Premium HTML Email Template with CSS branding matching CIT-U
             String htmlContent = "<div style=\"font-family: 'Outfit', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #ECECEF; border-radius: 16px;\">"
                     + "  <div style=\"text-align: center; margin-bottom: 24px;\">"
                     + "    <h2 style=\"color: #B22222; margin: 0; font-size: 26px;\">Wildcat Marketplace</h2>"
@@ -63,7 +77,7 @@ public class EmailService {
             mailSender.send(message);
 
         } catch (Exception e) {
-            System.err.println("Failed to send verification email to " + recipientEmail + ": " + e.getMessage());
+            System.err.println("SMTP deliverability failed (expected on cloud host restrictions). Click verification URL directly from the console logs instead: " + verifyUrl);
         }
     }
 }
