@@ -1,21 +1,23 @@
 package com.teknoycart.services;
 
-import jakarta.mail.internet.MimeMessage;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Async;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Map;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class EmailService {
 
-    @Autowired(required = false)
-    private JavaMailSender mailSender;
+    @Value("${resend.api.key}")
+    private String resendApiKey;
 
-    @Value("${spring.mail.username:noreply@teknoycart.com}")
-    private String senderEmail;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient httpClient = HttpClient.newHttpClient();
 
     @Async
     public void sendVerificationEmail(String recipientEmail, String recipientName, String verificationToken) {
@@ -25,19 +27,7 @@ public class EmailService {
         System.out.println(verifyUrl);
         System.out.println("=========================================================================");
 
-        if (mailSender == null) {
-            System.out.println("SMTP Mail Sender not configured. Verification Link: " + verifyUrl);
-            return;
-        }
-
         try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
-            helper.setFrom(senderEmail, "TeknoyCart CIT-U");
-            helper.setTo(recipientEmail);
-            helper.setSubject("Verify Your TeknoyCart Account");
-
             // Premium HTML Email Template with CSS branding matching CIT-U
             String htmlContent = "<div style=\"font-family: 'Outfit', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #ECECEF; border-radius: 16px;\">"
                     + "  <div style=\"text-align: center; margin-bottom: 24px;\">"
@@ -63,11 +53,35 @@ public class EmailService {
                     + "  </p>"
                     + "</div>";
 
-            helper.setText(htmlContent, true);
-            mailSender.send(message);
+            // Prepare JSON payload for Resend API
+            // Note: Since we are using a free Resend testing API key, the 'from' email must be onboarding@resend.dev.
+            // Under the free tier, we can send to any verified test email or our signup email (e.g. clarencekirk.macapobre@cit.edu if verified, or the registered account).
+            Map<String, Object> payload = Map.of(
+                "from", "TeknoyCart <onboarding@resend.dev>",
+                "to", recipientEmail,
+                "subject", "Verify Your TeknoyCart Account",
+                "html", htmlContent
+            );
+
+            String requestBody = objectMapper.writeValueAsString(payload);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.resend.com/emails"))
+                    .header("Authorization", "Bearer " + resendApiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200 || response.statusCode() == 201) {
+                System.out.println("Email successfully dispatched via Resend REST API to " + recipientEmail);
+            } else {
+                System.err.println("Resend API failed to dispatch email. Status code: " + response.statusCode() + ", Response: " + response.body());
+            }
 
         } catch (Exception e) {
-            System.err.println("SMTP deliverability failed (expected on cloud host restrictions). Click verification URL directly from the console logs instead: " + verifyUrl);
+            System.err.println("Failed to send verification email via Resend API: " + e.getMessage());
         }
     }
 }

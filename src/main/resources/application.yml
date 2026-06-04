@@ -42,3 +42,8 @@ server:
 jwt:
   secret: YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS
   expiration: 86400000 # 24 Hours in milliseconds
+
+resend:
+  api:
+    key: ${RESEND_API_KEY:re_3QE7GUCj_8PP4nxiFDaNJjVU9XTrkJg4c}
+
