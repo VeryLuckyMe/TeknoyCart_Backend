@@ -8,13 +8,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
+import java.util.List;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class EmailService {
 
-    @Value("${resend.api.key}")
-    private String resendApiKey;
+    @Value("${brevo.api.key}")
+    private String brevoApiKey;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -53,36 +54,36 @@ public class EmailService {
                     + "  </p>"
                     + "</div>";
 
-            // Sandbox Fallback: Since this is a free developer Resend account, all emails must go to clarencekirkmc@gmail.com.
-            // But we display the original recipientEmail in the console and database cleanly.
-            String targetDeliveryEmail = "clarencekirkmc@gmail.com";
-
+            // Prepare JSON payload for Brevo Transactional Email REST API
+            // Sender can be custom-named, but will show as sent via Brevo.
+            // Recipient can be ANY email address (no sandbox restrictions!)
             Map<String, Object> payload = Map.of(
-                "from", "TeknoyCart <onboarding@resend.dev>",
-                "to", targetDeliveryEmail,
-                "subject", "Verify Your TeknoyCart Account (" + recipientEmail + ")",
-                "html", htmlContent
+                "sender", Map.of("name", "TeknoyCart CIT-U", "email", "noreply@teknoycart.com"),
+                "to", List.of(Map.of("email", recipientEmail, "name", recipientName)),
+                "subject", "Verify Your TeknoyCart Account",
+                "htmlContent", htmlContent
             );
 
             String requestBody = objectMapper.writeValueAsString(payload);
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.resend.com/emails"))
-                    .header("Authorization", "Bearer " + resendApiKey)
+                    .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
+                    .header("api-key", brevoApiKey)
                     .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            if (response.statusCode() == 200 || response.statusCode() == 201) {
-                System.out.println("Email successfully dispatched via Resend REST API to " + recipientEmail);
+            if (response.statusCode() == 200 || response.statusCode() == 201 || response.statusCode() == 202) {
+                System.out.println("Email successfully dispatched via Brevo REST API to " + recipientEmail);
             } else {
-                System.err.println("Resend API failed to dispatch email. Status code: " + response.statusCode() + ", Response: " + response.body());
+                System.err.println("Brevo API failed to dispatch email. Status code: " + response.statusCode() + ", Response: " + response.body());
             }
 
         } catch (Exception e) {
-            System.err.println("Failed to send verification email via Resend API: " + e.getMessage());
+            System.err.println("Failed to send verification email via Brevo API: " + e.getMessage());
         }
     }
 }

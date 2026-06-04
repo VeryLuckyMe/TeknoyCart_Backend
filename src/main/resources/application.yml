@@ -43,7 +43,7 @@ jwt:
   secret: YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS
   expiration: 86400000 # 24 Hours in milliseconds
 
-resend:
+brevo:
   api:
-    key: ${RESEND_API_KEY:re_3QE7GUCj_8PP4nxiFDaNJjVU9XTrkJg4c}
+    key: ${BREVO_API_KEY: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}
 
