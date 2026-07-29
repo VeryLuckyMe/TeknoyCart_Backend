@@ -25,6 +25,9 @@ public class User {
     @Column(name = "role", nullable = false)
     private String role = "BUYER"; // Default role
 
+    @Transient
+    private String storeName;
+
     @Column(name = "is_verified", nullable = false)
     private boolean isVerified = false;
 
@@ -49,7 +52,13 @@ public class User {
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @OneToOne(mappedBy = "owner", cascade = CascadeType.ALL)
+    private Store store;
+
     // Getters and Setters
+    public Store getStore() { return store; }
+    public void setStore(Store store) { this.store = store; }
+
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }
 
@@ -87,4 +96,7 @@ public class User {
     public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
+
+    public String getStoreName() { return storeName; }
+    public void setStoreName(String storeName) { this.storeName = storeName; }
 }
