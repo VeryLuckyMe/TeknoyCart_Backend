@@ -75,8 +75,9 @@ public class OrderService {
 
     public Order scheduleMeetup(UUID orderId, UUID actorId) {
         Order order = getOrder(orderId);
-        // Accept both new (ACCEPTED) and legacy (APPROVED, SELLER_ACCEPTED) statuses
+        // Accept both new (ACCEPTED, MEETUP_SCHEDULED) and legacy (APPROVED, SELLER_ACCEPTED) statuses
         if (order.getStatus() != OrderStatus.ACCEPTED && 
+            order.getStatus() != OrderStatus.MEETUP_SCHEDULED && 
             order.getStatus() != OrderStatus.APPROVED && 
             order.getStatus() != OrderStatus.SELLER_ACCEPTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Meetup cannot be scheduled from state: " + order.getStatus());
