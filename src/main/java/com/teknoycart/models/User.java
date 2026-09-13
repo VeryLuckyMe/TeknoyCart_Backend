@@ -56,47 +56,119 @@ public class User {
     private Store store;
 
     // Getters and Setters
-    public Store getStore() { return store; }
-    public void setStore(Store store) { this.store = store; }
+    public Store getStore() {
+        return store;
+    }
 
-    public UUID getUserId() { return userId; }
-    public void setUserId(UUID userId) { this.userId = userId; }
+    public void setStore(Store store) {
+        this.store = store;
+    }
 
-    public String getFullName() { return fullName; }
-    public void setFullName(String fullName) { this.fullName = fullName; }
+    public UUID getUserId() {
+        return userId;
+    }
 
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
+    public void setUserId(UUID userId) {
+        this.userId = userId;
+    }
 
-    public String getPasswordHash() { return passwordHash; }
-    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+    public String getFullName() {
+        return fullName;
+    }
 
-    public String getRole() { return role; }
-    public void setRole(String role) { this.role = role; }
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
+    }
 
-    public boolean isVerified() { return isVerified; }
-    public void setVerified(boolean verified) { isVerified = verified; }
+    public String getEmail() {
+        return email;
+    }
 
-    public boolean isSellerVerified() { return isSellerVerified; }
-    public void setSellerVerified(boolean sellerVerified) { isSellerVerified = sellerVerified; }
+    public void setEmail(String email) {
+        this.email = email;
+    }
 
-    public boolean isLocked() { return isLocked; }
-    public void setLocked(boolean locked) { isLocked = locked; }
+    public String getPasswordHash() {
+        return passwordHash;
+    }
 
-    public int getFailedAttempts() { return failedAttempts; }
-    public void setFailedAttempts(int failedAttempts) { this.failedAttempts = failedAttempts; }
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
 
-    public LocalDateTime getLockUntil() { return lockUntil; }
-    public void setLockUntil(LocalDateTime lockUntil) { this.lockUntil = lockUntil; }
+    public String getRole() {
+        return role;
+    }
 
-    public String getVerificationToken() { return verificationToken; }
-    public void setVerificationToken(String verificationToken) { this.verificationToken = verificationToken; }
+    public void setRole(String role) {
+        this.role = role;
+    }
 
-    public LocalDateTime getTokenExpiresAt() { return tokenExpiresAt; }
-    public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
+    public boolean isVerified() {
+        return isVerified;
+    }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setVerified(boolean verified) {
+        isVerified = verified;
+    }
 
-    public String getStoreName() { return storeName; }
-    public void setStoreName(String storeName) { this.storeName = storeName; }
+    public boolean isSellerVerified() {
+        return isSellerVerified;
+    }
+
+    public void setSellerVerified(boolean sellerVerified) {
+        isSellerVerified = sellerVerified;
+    }
+
+    public boolean isLocked() {
+        return isLocked;
+    }
+
+    public void setLocked(boolean locked) {
+        isLocked = locked;
+    }
+
+    public int getFailedAttempts() {
+        return failedAttempts;
+    }
+
+    public void setFailedAttempts(int failedAttempts) {
+        this.failedAttempts = failedAttempts;
+    }
+
+    public LocalDateTime getLockUntil() {
+        return lockUntil;
+    }
+
+    public void setLockUntil(LocalDateTime lockUntil) {
+        this.lockUntil = lockUntil;
+    }
+
+    public String getVerificationToken() {
+        return verificationToken;
+    }
+
+    public void setVerificationToken(String verificationToken) {
+        this.verificationToken = verificationToken;
+    }
+
+    public LocalDateTime getTokenExpiresAt() {
+        return tokenExpiresAt;
+    }
+
+    public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) {
+        this.tokenExpiresAt = tokenExpiresAt;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public String getStoreName() {
+        return storeName;
+    }
+
+    public void setStoreName(String storeName) {
+        this.storeName = storeName;
+    }
 }
