@@ -33,7 +33,7 @@ public class SecurityConfig {
             .cors(cors -> {}) // Enable Spring Security CORS handling to respect @CrossOrigin
             .authorizeHttpRequests(authorize -> authorize
                 // Allow public access to authentication, error, and potential future developer APIs
-                .requestMatchers("/auth/**", "/error").permitAll()
+                .requestMatchers("/auth/**", "/error", "/api/**").permitAll()
                 // DEVELOPER TIP: If you add new business REST controllers (e.g., /api/products)
                 // in the future, you must either:
                 // 1. Add them to the permitAll list above (e.g., "/auth/**", "/error", "/api/**")
