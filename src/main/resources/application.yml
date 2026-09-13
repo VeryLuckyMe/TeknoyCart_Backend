@@ -38,6 +38,9 @@ server:
   port: ${PORT:8080}
   servlet:
     context-path: /api
+  error:
+    include-message: always
+    include-binding-errors: always
 
 jwt:
   secret: YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS

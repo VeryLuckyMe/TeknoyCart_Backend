@@ -45,8 +45,8 @@ public class OrderService {
             order.getStatus() != OrderStatus.PENDING_SELLER_ACCEPT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Order cannot be accepted from state: " + order.getStatus());
         }
-        if (!order.getSellerId().equals(sellerId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the seller can accept the order");
+        if (order.getSellerId() != null && !order.getSellerId().equals(sellerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the seller can accept the order. Order seller: " + order.getSellerId() + ", Actor: " + sellerId);
         }
 
         OrderStatus oldStatus = order.getStatus();

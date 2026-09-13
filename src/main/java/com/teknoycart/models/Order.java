@@ -18,7 +18,7 @@ public class Order {
     @Column(name = "seller_id")
     private UUID sellerId;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = OrderStatusConverter.class)
     @Column(name = "status")
     private OrderStatus status;
 

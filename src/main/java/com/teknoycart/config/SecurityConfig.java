@@ -37,7 +37,7 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Enable Spring Security CORS handling to respect @CrossOrigin
             .authorizeHttpRequests(authorize -> authorize
                 // Allow public access to authentication, error, and potential future developer APIs
-                .requestMatchers("/auth/**", "/error", "/api/**").permitAll()
+                .requestMatchers("/auth/**", "/error", "/orders/**", "/stores/**", "/api/**").permitAll()
                 // DEVELOPER TIP: If you add new business REST controllers (e.g., /api/products)
                 // in the future, you must either:
                 // 1. Add them to the permitAll list above (e.g., "/auth/**", "/error", "/api/**")
@@ -55,7 +55,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setExposedHeaders(Arrays.asList("Authorization"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
