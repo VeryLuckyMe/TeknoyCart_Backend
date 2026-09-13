@@ -37,7 +37,7 @@ public class OrderService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
     }
 
-    public Order acceptOrder(UUID orderId, UUID sellerId) {
+    public Order acceptOrder(UUID orderId, UUID actorId) {
         Order order = getOrder(orderId);
         // Accept both new (PLACED) and legacy (INQUIRY_SENT, PENDING_SELLER_ACCEPT) statuses
         if (order.getStatus() != OrderStatus.PLACED && 
@@ -45,19 +45,28 @@ public class OrderService {
             order.getStatus() != OrderStatus.PENDING_SELLER_ACCEPT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Order cannot be accepted from state: " + order.getStatus());
         }
-        if (order.getSellerId() != null && !order.getSellerId().equals(sellerId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the seller can accept the order. Order seller: " + order.getSellerId() + ", Actor: " + sellerId);
+        // Enforce: only the designated seller can accept the order
+        if (order.getSellerId() == null || !order.getSellerId().equals(actorId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the seller can accept this order");
         }
 
         OrderStatus oldStatus = order.getStatus();
         order.setStatus(OrderStatus.ACCEPTED);
         order = orderRepository.save(order);
-        logAudit(order, sellerId, oldStatus, order.getStatus(), "MANUAL");
+        logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL");
         return order;
     }
 
     public Order cancelOrder(UUID orderId, UUID actorId, String reason) {
         Order order = getOrder(orderId);
+        // Enforce: only the buyer or seller can cancel the order
+        if (!actorId.equals(order.getBuyerId()) && !actorId.equals(order.getSellerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the buyer or seller can cancel this order");
+        }
+        // Enforce: non-blank cancellation reason
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cancellation reason is required");
+        }
         if (order.getStatus() == OrderStatus.HANDOFF_PENDING || 
             order.getStatus() == OrderStatus.COMPLETED || 
             order.getStatus() == OrderStatus.CANCELLED ||
@@ -69,12 +78,16 @@ public class OrderService {
         OrderStatus oldStatus = order.getStatus();
         order.setStatus(OrderStatus.CANCELLED);
         order = orderRepository.save(order);
-        logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL - Reason: " + reason);
+        logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL - Reason: " + reason.trim());
         return order;
     }
 
     public Order scheduleMeetup(UUID orderId, UUID actorId) {
         Order order = getOrder(orderId);
+        // Enforce: only the buyer or seller can schedule/generate meetup code
+        if (!actorId.equals(order.getBuyerId()) && !actorId.equals(order.getSellerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the buyer or seller can schedule this meetup");
+        }
         // Accept both new (ACCEPTED, MEETUP_SCHEDULED) and legacy (APPROVED, SELLER_ACCEPTED) statuses
         if (order.getStatus() != OrderStatus.ACCEPTED && 
             order.getStatus() != OrderStatus.MEETUP_SCHEDULED && 
@@ -96,12 +109,13 @@ public class OrderService {
         return order;
     }
 
-    public Order verifyHandoff(UUID orderId, UUID sellerId, String otp) {
+    public Order verifyHandoff(UUID orderId, UUID actorId, String otp) {
         Order order = getOrder(orderId);
         if (order.getStatus() != OrderStatus.MEETUP_SCHEDULED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Handoff cannot be verified from state: " + order.getStatus());
         }
-        if (!order.getSellerId().equals(sellerId)) {
+        // Enforce: only the seller can verify handoff using the OTP
+        if (order.getSellerId() == null || !order.getSellerId().equals(actorId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the seller can verify handoff");
         }
         if (order.getHandoffOtp() == null || !order.getHandoffOtp().equals(otp)) {
@@ -112,16 +126,17 @@ public class OrderService {
         order.setStatus(OrderStatus.HANDOFF_PENDING);
         order.setSellerHandedOff(true);
         order = orderRepository.save(order);
-        logAudit(order, sellerId, oldStatus, order.getStatus(), "OTP_MATCH");
+        logAudit(order, actorId, oldStatus, order.getStatus(), "OTP_MATCH");
         return order;
     }
 
-    public Order confirmReceipt(UUID orderId, UUID buyerId) {
+    public Order confirmReceipt(UUID orderId, UUID actorId) {
         Order order = getOrder(orderId);
         if (order.getStatus() != OrderStatus.HANDOFF_PENDING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Receipt cannot be confirmed from state: " + order.getStatus());
         }
-        if (!order.getBuyerId().equals(buyerId)) {
+        // Enforce: only the buyer can confirm receipt of the item
+        if (order.getBuyerId() == null || !order.getBuyerId().equals(actorId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the buyer can confirm receipt");
         }
 
@@ -133,23 +148,28 @@ public class OrderService {
         }
         
         order = orderRepository.save(order);
-        logAudit(order, buyerId, oldStatus, order.getStatus(), "MANUAL");
+        logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL");
         return order;
     }
 
-    public Order requestRefund(UUID orderId, UUID buyerId, String reason, String evidence) {
+    public Order requestRefund(UUID orderId, UUID actorId, String reason, String evidence) {
         Order order = getOrder(orderId);
         if (order.getStatus() != OrderStatus.COMPLETED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Refund cannot be requested from state: " + order.getStatus());
         }
-        if (!order.getBuyerId().equals(buyerId)) {
+        // Enforce: only the buyer can request a refund
+        if (order.getBuyerId() == null || !order.getBuyerId().equals(actorId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the buyer can request refund");
+        }
+        // Enforce: non-blank reason
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Refund reason is required");
         }
 
         OrderStatus oldStatus = order.getStatus();
         order.setStatus(OrderStatus.REFUND_REQUESTED);
         order = orderRepository.save(order);
-        logAudit(order, buyerId, oldStatus, order.getStatus(), "MANUAL - Reason: " + reason + " Evidence: " + evidence);
+        logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL - Reason: " + reason.trim() + (evidence != null ? " Evidence: " + evidence.trim() : ""));
         return order;
     }
 }

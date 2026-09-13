@@ -8,9 +8,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.teknoycart.services.EmailService;
 
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableAsync
+@EnableScheduling
 public class TeknoyCartApplication implements CommandLineRunner {
 
     @Autowired
