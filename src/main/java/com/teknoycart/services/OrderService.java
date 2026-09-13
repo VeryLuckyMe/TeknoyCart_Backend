@@ -39,7 +39,10 @@ public class OrderService {
 
     public Order acceptOrder(UUID orderId, UUID sellerId) {
         Order order = getOrder(orderId);
-        if (order.getStatus() != OrderStatus.PLACED) {
+        // Accept both new (PLACED) and legacy (INQUIRY_SENT, PENDING_SELLER_ACCEPT) statuses
+        if (order.getStatus() != OrderStatus.PLACED && 
+            order.getStatus() != OrderStatus.INQUIRY_SENT && 
+            order.getStatus() != OrderStatus.PENDING_SELLER_ACCEPT) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Order cannot be accepted from state: " + order.getStatus());
         }
         if (!order.getSellerId().equals(sellerId)) {
@@ -72,7 +75,10 @@ public class OrderService {
 
     public Order scheduleMeetup(UUID orderId, UUID actorId) {
         Order order = getOrder(orderId);
-        if (order.getStatus() != OrderStatus.ACCEPTED) {
+        // Accept both new (ACCEPTED) and legacy (APPROVED, SELLER_ACCEPTED) statuses
+        if (order.getStatus() != OrderStatus.ACCEPTED && 
+            order.getStatus() != OrderStatus.APPROVED && 
+            order.getStatus() != OrderStatus.SELLER_ACCEPTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Meetup cannot be scheduled from state: " + order.getStatus());
         }
 
