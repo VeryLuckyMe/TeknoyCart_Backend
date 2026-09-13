@@ -1,10 +1,12 @@
 -- Migration to support secure order state machine and mutual confirmation
 
--- 1. Add mutual confirmation and OTP fields to orders table
+-- 1. Add mutual confirmation and OTP fields to orders table, and convert status to VARCHAR
 ALTER TABLE orders 
 ADD COLUMN IF NOT EXISTS seller_handed_off BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS buyer_confirmed_receipt BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS handoff_otp VARCHAR(6);
+
+ALTER TABLE orders ALTER COLUMN status TYPE VARCHAR USING status::TEXT;
 
 -- 2. Create order_audit_logs table
 CREATE TABLE IF NOT EXISTS order_audit_logs (
