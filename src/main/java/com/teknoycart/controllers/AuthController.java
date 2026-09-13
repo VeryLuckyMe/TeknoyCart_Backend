@@ -35,7 +35,7 @@ public class AuthController {
         String email = user.getEmail().toLowerCase().trim();
         if (!email.endsWith("@cit.edu")) {
             return ResponseEntity.badRequest()
-                .body("Registration restricted to official Cebu Institute of Technology - University accounts.");
+                    .body("Registration restricted to official Cebu Institute of Technology - University accounts.");
         }
 
         if (userRepository.findByEmail(email).isPresent()) {
@@ -54,7 +54,7 @@ public class AuthController {
         // Generate dynamic verification token with 5-minute expiration
         String token = UUID.randomUUID().toString();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(5);
-        
+
         user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
         user.setEmail(email);
         user.setVerified(false); // Force all accounts to verify email before logging in
@@ -67,18 +67,21 @@ public class AuthController {
             com.teknoycart.models.Store store = new com.teknoycart.models.Store();
             store.setStoreName(user.getStoreName().trim());
             store.setOwner(savedUser);
-            store.setPublicSupportEmail("support." + user.getStoreName().toLowerCase().replaceAll("\\s+", "") + "@cit.edu");
+            store.setPublicSupportEmail(
+                    "support." + user.getStoreName().toLowerCase().replaceAll("\\s+", "") + "@cit.edu");
             storeRepository.save(store);
         }
 
         // Send HTML verification email via Outlook SMTP
         emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), token);
 
-        return ResponseEntity.ok("Registration successful! A verification email has been sent to your Outlook account.");
+        return ResponseEntity
+                .ok("Registration successful! A verification email has been sent to your Outlook account.");
     }
 
     @PostMapping("/send-verification")
-    public ResponseEntity<?> sendVerificationEmail(@RequestParam("email") String email, @RequestParam("fullName") String fullName) {
+    public ResponseEntity<?> sendVerificationEmail(@RequestParam("email") String email,
+            @RequestParam("fullName") String fullName) {
         String trimmedEmail = email.toLowerCase().trim();
         Optional<User> userOpt = userRepository.findByEmail(trimmedEmail);
 
@@ -95,9 +98,8 @@ public class AuthController {
 
         emailService.sendVerificationEmail(user.getEmail(), user.getFullName(), token);
         return ResponseEntity.ok(Map.of(
-            "message", "Verification email sent successfully!",
-            "expiresAt", expiresAt.toString()
-        ));
+                "message", "Verification email sent successfully!",
+                "expiresAt", expiresAt.toString()));
     }
 
     @GetMapping("/verify")
@@ -106,10 +108,10 @@ public class AuthController {
 
         if (userOpt.isEmpty()) {
             return ResponseEntity.badRequest()
-                .body("<html><body style=\"font-family: Arial; text-align: center; margin-top: 100px;\">"
-                    + "<h2 style=\"color: red;\">Invalid Verification Link</h2>"
-                    + "<p>This verification link is invalid or has already expired.</p>"
-                    + "</body></html>");
+                    .body("<html><body style=\"font-family: Arial; text-align: center; margin-top: 100px;\">"
+                            + "<h2 style=\"color: red;\">Invalid Verification Link</h2>"
+                            + "<p>This verification link is invalid or has already expired.</p>"
+                            + "</body></html>");
         }
 
         User user = userOpt.get();
@@ -117,13 +119,13 @@ public class AuthController {
         // Check if token has expired
         if (user.getTokenExpiresAt() != null && LocalDateTime.now().isAfter(user.getTokenExpiresAt())) {
             return ResponseEntity.badRequest()
-                .body("<html><body style=\"font-family: 'Segoe UI', Arial, sans-serif; text-align: center; margin-top: 80px; background-color: #FAFAFA;\">"
-                    + "<div style=\"max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #ECECEF; border-radius: 16px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.08);\">"
-                    + "<h2 style=\"color: #E65100;\">⏱️ Verification Link Expired</h2>"
-                    + "<p style=\"color: #555; font-size: 15px; line-height: 1.6;\">This verification link has expired. Please go back to the TeknoyCart app and request a new verification email.</p>"
-                    + "<p style=\"color: #888; font-size: 12px; margin-top: 24px;\">Verification links are valid for 5 minutes for security purposes.</p>"
-                    + "</div>"
-                    + "</body></html>");
+                    .body("<html><body style=\"font-family: 'Segoe UI', Arial, sans-serif; text-align: center; margin-top: 80px; background-color: #FAFAFA;\">"
+                            + "<div style=\"max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #ECECEF; border-radius: 16px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.08);\">"
+                            + "<h2 style=\"color: #E65100;\">⏱️ Verification Link Expired</h2>"
+                            + "<p style=\"color: #555; font-size: 15px; line-height: 1.6;\">This verification link has expired. Please go back to the TeknoyCart app and request a new verification email.</p>"
+                            + "<p style=\"color: #888; font-size: 12px; margin-top: 24px;\">Verification links are valid for 5 minutes for security purposes.</p>"
+                            + "</div>"
+                            + "</body></html>");
         }
 
         user.setVerified(true);
@@ -132,13 +134,14 @@ public class AuthController {
         userRepository.save(user);
 
         return ResponseEntity.ok()
-            .body("<html><body style=\"font-family: Arial; text-align: center; margin-top: 100px;\">"
-                + "<div style=\"max-width: 500px; margin: 0 auto; padding: 30px; border: 1px solid #ddd; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);\">"
-                + "<h2 style=\"color: #B22222;\">Verification Successful!</h2>"
-                + "<p style=\"color: #555;\">Thank you, <b>" + user.getFullName() + "</b>. Your institutional email has been verified.</p>"
-                + "<p>You can now open the TeknoyCart mobile app and sign in with your credentials.</p>"
-                + "</div>"
-                + "</body></html>");
+                .body("<html><body style=\"font-family: Arial; text-align: center; margin-top: 100px;\">"
+                        + "<div style=\"max-width: 500px; margin: 0 auto; padding: 30px; border: 1px solid #ddd; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);\">"
+                        + "<h2 style=\"color: #B22222;\">Verification Successful!</h2>"
+                        + "<p style=\"color: #555;\">Thank you, <b>" + user.getFullName()
+                        + "</b>. Your institutional email has been verified.</p>"
+                        + "<p>You can now open the TeknoyCart mobile app and sign in with your credentials.</p>"
+                        + "</div>"
+                        + "</body></html>");
     }
 
     @GetMapping("/check-verification")
@@ -168,14 +171,15 @@ public class AuthController {
         // 1. Enforce Email Verification Guard
         if (!user.isVerified()) {
             return ResponseEntity.status(403)
-                .body("Your account email has not been verified yet. Please check your Outlook inbox.");
+                    .body("Your account email has not been verified yet. Please check your Outlook inbox.");
         }
 
         // 2. Check account lockout state
         if (user.isLocked()) {
-            if (user.getLockUntil() != null && LocalDateTime.now(java.time.ZoneId.of("UTC")).isBefore(user.getLockUntil())) {
+            if (user.getLockUntil() != null
+                    && LocalDateTime.now(java.time.ZoneId.of("UTC")).isBefore(user.getLockUntil())) {
                 return ResponseEntity.status(403)
-                    .body("Account is temporarily locked. Try again in 15 minutes.");
+                        .body("Account is temporarily locked. Try again in 15 minutes.");
             } else {
                 user.setLocked(false);
                 user.setFailedAttempts(0);
@@ -194,13 +198,13 @@ public class AuthController {
                 user.setLockUntil(LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(15));
                 userRepository.save(user);
                 return ResponseEntity.status(403)
-                    .body("Too many failed attempts. Account locked for 15 minutes.");
+                        .body("Too many failed attempts. Account locked for 15 minutes.");
             }
 
             userRepository.save(user);
             int remaining = 5 - attempts;
             return ResponseEntity.badRequest()
-                .body("Error: Incorrect password. " + remaining + " attempts remaining before lockout.");
+                    .body("Error: Incorrect password. " + remaining + " attempts remaining before lockout.");
         }
 
         user.setFailedAttempts(0);
@@ -212,8 +216,7 @@ public class AuthController {
         String token = tokenProvider.generateToken(user.getEmail(), user.getRole());
 
         return ResponseEntity.ok(Map.of(
-            "token", token,
-            "user", user
-        ));
+                "token", token,
+                "user", user));
     }
 }
