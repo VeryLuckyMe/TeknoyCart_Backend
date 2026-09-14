@@ -8,4 +8,7 @@ import java.util.UUID;
 
 @Repository
 public interface OrderAuditLogRepository extends JpaRepository<OrderAuditLog, UUID> {
+
+    OrderAuditLog findTopByOrderIdOrderByCreatedAtDesc(UUID orderId);
 }
+

@@ -12,7 +12,11 @@ target/
 .DS_Store
 Thumbs.db
 
-# Optional: If you plan to push to a public GitHub repository,
-# uncomment the line below to protect your database & email passwords!
-# src/main/resources/application.yml
-src/main/resources/application-local.yml
+# Secrets & Local Configurations
+src/main/resources/application-local*.yml
+!src/main/resources/application-local.yml.example
+*.env
+.env*
+*.key
+*.pem
+*.p12

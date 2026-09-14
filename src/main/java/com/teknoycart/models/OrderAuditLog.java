@@ -1,7 +1,7 @@
 package com.teknoycart.models;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -28,7 +28,7 @@ public class OrderAuditLog {
     private String method;
 
     @Column(name = "created_at", insertable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     // Getters and Setters
     public UUID getId() { return id; }
@@ -49,6 +49,7 @@ public class OrderAuditLog {
     public String getMethod() { return method; }
     public void setMethod(String method) { this.method = method; }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }
+

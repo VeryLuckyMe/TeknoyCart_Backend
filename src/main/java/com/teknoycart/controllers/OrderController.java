@@ -77,4 +77,25 @@ public class OrderController {
         String evidence = payload != null ? payload.get("evidence") : null;
         return ResponseEntity.ok(orderService.requestRefund(id, actorId, reason, evidence));
     }
+
+    @PostMapping("/{id}/submit-payment")
+    public ResponseEntity<Order> submitPayment(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String reference = payload != null ? payload.getOrDefault("payment_reference", payload.get("gcash_reference")) : null;
+        String proofUrl = payload != null ? payload.get("payment_proof_url") : null;
+        return ResponseEntity.ok(orderService.submitPayment(id, actorId, reference, proofUrl));
+    }
+
+    @PostMapping("/{id}/verify-payment")
+    public ResponseEntity<Order> verifyPayment(@PathVariable UUID id) {
+        UUID actorId = getAuthenticatedUserId();
+        return ResponseEntity.ok(orderService.verifyPayment(id, actorId));
+    }
+
+    @PostMapping("/{id}/confirm-refund")
+    public ResponseEntity<Order> confirmRefund(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String refundReference = payload != null ? payload.get("refund_reference") : null;
+        return ResponseEntity.ok(orderService.confirmRefund(id, actorId, refundReference));
+    }
 }

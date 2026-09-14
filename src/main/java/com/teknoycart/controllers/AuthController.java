@@ -157,30 +157,80 @@ public class AuthController {
     @Autowired
     private com.teknoycart.security.JwtTokenProvider tokenProvider;
 
+    @org.springframework.beans.factory.annotation.Value("${supabase.url:https://chmtvasbhkbrvydbajnd.supabase.co}")
+    private String supabaseUrl;
+
+    @org.springframework.beans.factory.annotation.Value("${supabase.anon-key:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I}")
+    private String supabaseAnonKey;
+
+    private Map<String, Object> authenticateWithSupabase(String email, String password) {
+        try {
+            String tokenUrl = supabaseUrl + "/auth/v1/token?grant_type=password";
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String requestBody = mapper.writeValueAsString(Map.of(
+                    "email", email,
+                    "password", password
+            ));
+
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create(tokenUrl))
+                    .header("Content-Type", "application/json")
+                    .header("apikey", supabaseAnonKey)
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return mapper.readValue(response.body(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @PostMapping("/login")
-    public ResponseEntity<?> authenticateUser(@RequestBody User loginRequest) {
-        String email = loginRequest.getEmail().toLowerCase().trim();
+    public ResponseEntity<?> authenticateUser(@RequestBody Map<String, Object> loginRequest) {
+        String email = loginRequest.get("email") != null ? loginRequest.get("email").toString() : null;
+        String password = loginRequest.get("password") != null 
+                ? loginRequest.get("password").toString() 
+                : (loginRequest.get("passwordHash") != null ? loginRequest.get("passwordHash").toString() : null);
+
+        if (email == null || email.trim().isEmpty() || password == null || password.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "type", "INVALID_CREDENTIALS",
+                    "message", "Email and password are required."
+            ));
+        }
+
+        email = email.toLowerCase().trim();
         Optional<User> userOpt = userRepository.findByEmail(email);
 
+        // Anti-enumeration: return identical error if user does not exist
         if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body("Error: Incorrect email or password.");
+            return ResponseEntity.badRequest().body(Map.of(
+                    "type", "INVALID_CREDENTIALS",
+                    "message", "Invalid email or password."
+            ));
         }
 
         User user = userOpt.get();
 
-        // 1. Enforce Email Verification Guard
-        if (!user.isVerified()) {
-            return ResponseEntity.status(403)
-                    .body("Your account email has not been verified yet. Please check your Outlook inbox.");
-        }
-
-        // 2. Check account lockout state
+        // 1. Check account lockout state
         if (user.isLocked()) {
             if (user.getLockUntil() != null
                     && LocalDateTime.now(java.time.ZoneId.of("UTC")).isBefore(user.getLockUntil())) {
-                return ResponseEntity.status(403)
-                        .body("Account is temporarily locked. Try again in 15 minutes.");
+                long remainingMinutes = java.time.Duration.between(
+                        LocalDateTime.now(java.time.ZoneId.of("UTC")), user.getLockUntil()
+                ).toMinutes() + 1;
+                return ResponseEntity.status(403).body(Map.of(
+                        "type", "ACCOUNT_LOCKED",
+                        "message", "Account is temporarily locked. Try again in " + remainingMinutes + " minutes.",
+                        "lockUntil", user.getLockUntil().toString()
+                ));
             } else {
+                // Lock expired - reset parameters
                 user.setLocked(false);
                 user.setFailedAttempts(0);
                 user.setLockUntil(null);
@@ -188,25 +238,58 @@ public class AuthController {
             }
         }
 
-        // 3. Validate Password
-        if (!passwordEncoder.matches(loginRequest.getPasswordHash(), user.getPasswordHash())) {
+        // 2. Enforce Email Verification Guard
+        if (!user.isVerified()) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "type", "EMAIL_UNVERIFIED",
+                    "message", "Your account email has not been verified yet. Please check your Outlook inbox.",
+                    "email", user.getEmail(),
+                    "fullName", user.getFullName() != null ? user.getFullName() : "Student"
+            ));
+        }
+
+        // 3. Validate Password with Supabase GoTrue (or fallback BCrypt for seed demo users)
+        boolean authenticated = false;
+        Map<String, Object> supabaseSession = null;
+
+        if ("SUPABASE_AUTH_MANAGED".equals(user.getPasswordHash())) {
+            supabaseSession = authenticateWithSupabase(email, password);
+            authenticated = (supabaseSession != null);
+        } else if (user.getPasswordHash() != null && user.getPasswordHash().startsWith("$2a$")) {
+            authenticated = passwordEncoder.matches(password, user.getPasswordHash());
+        } else {
+            // Fallback try GoTrue first, then encoder
+            supabaseSession = authenticateWithSupabase(email, password);
+            authenticated = (supabaseSession != null) || passwordEncoder.matches(password, user.getPasswordHash());
+        }
+
+        if (!authenticated) {
             int attempts = user.getFailedAttempts() + 1;
             user.setFailedAttempts(attempts);
 
             if (attempts >= 5) {
+                LocalDateTime lockUntil = LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(15);
                 user.setLocked(true);
-                user.setLockUntil(LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(15));
+                user.setLockUntil(lockUntil);
                 userRepository.save(user);
-                return ResponseEntity.status(403)
-                        .body("Too many failed attempts. Account locked for 15 minutes.");
+
+                return ResponseEntity.status(403).body(Map.of(
+                        "type", "ACCOUNT_LOCKED",
+                        "message", "Too many failed attempts. Account locked for 15 minutes.",
+                        "lockUntil", lockUntil.toString()
+                ));
             }
 
             userRepository.save(user);
             int remaining = 5 - attempts;
-            return ResponseEntity.badRequest()
-                    .body("Error: Incorrect password. " + remaining + " attempts remaining before lockout.");
+            return ResponseEntity.badRequest().body(Map.of(
+                    "type", "INVALID_CREDENTIALS",
+                    "message", "Invalid email or password. " + remaining + " attempts remaining before lockout.",
+                    "attemptsRemaining", remaining
+            ));
         }
 
+        // 4. Successful login: reset failed attempts & lockout state
         user.setFailedAttempts(0);
         user.setLocked(false);
         user.setLockUntil(null);
@@ -215,8 +298,24 @@ public class AuthController {
         // Generate stateless JWT session token signed using HMAC SHA-256
         String token = tokenProvider.generateToken(user.getEmail(), user.getRole());
 
-        return ResponseEntity.ok(Map.of(
-                "token", token,
-                "user", user));
+        // Build sanitized user map without sensitive security hashes/tokens
+        Map<String, Object> sanitizedUser = Map.of(
+                "userId", user.getUserId() != null ? user.getUserId().toString() : "",
+                "fullName", user.getFullName() != null ? user.getFullName() : "",
+                "email", user.getEmail(),
+                "role", user.getRole() != null ? user.getRole() : "BUYER",
+                "isVerified", user.isVerified(),
+                "isSellerVerified", user.isSellerVerified()
+        );
+
+        java.util.HashMap<String, Object> response = new java.util.HashMap<>();
+        response.put("token", token);
+        response.put("user", sanitizedUser);
+        if (supabaseSession != null) {
+            response.put("session", supabaseSession);
+        }
+
+        return ResponseEntity.ok(response);
     }
 }
+

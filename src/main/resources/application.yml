@@ -6,8 +6,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 465
-    username: clarencekirkmc@gmail.com
-    password: ${SPRING_MAIL_PASSWORD:YOUR_GMAIL_APP_PASSWORD}
+    username: ${SPRING_MAIL_USERNAME:clarencekirkmc@gmail.com}
+    password: ${SPRING_MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -21,9 +21,9 @@ spring:
             class: javax.net.ssl.SSLSocketFactory
             fallback: false
   datasource:
-    url: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
-    username: postgres.chmtvasbhkbrvydbajnd
-    password: ${SPRING_DATASOURCE_PASSWORD:YOUR_DATABASE_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres.chmtvasbhkbrvydbajnd}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: org.postgresql.Driver
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
@@ -43,10 +43,14 @@ server:
     include-binding-errors: always
 
 jwt:
-  secret: YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS
+  secret: ${JWT_SECRET:YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS}
   expiration: 86400000 # 24 Hours in milliseconds
 
 brevo:
   api:
     key: ${BREVO_API_KEY}
+
+supabase:
+  url: ${SUPABASE_URL:https://chmtvasbhkbrvydbajnd.supabase.co}
+  anon-key: ${SUPABASE_ANON_KEY:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I}
 

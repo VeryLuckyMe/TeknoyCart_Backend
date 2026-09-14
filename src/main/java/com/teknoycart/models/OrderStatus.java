@@ -10,6 +10,7 @@ public enum OrderStatus {
     CANCELLED,
     DISPUTED,
     REFUND_REQUESTED,
+    NEEDS_REVIEW,
 
     // Legacy statuses from the old Supabase-driven flow (kept for backward compatibility)
     INQUIRY_SENT,

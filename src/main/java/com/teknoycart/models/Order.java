@@ -1,6 +1,8 @@
 package com.teknoycart.models;
 
 import jakarta.persistence.*;
+import java.math.BigInteger;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -31,6 +33,22 @@ public class Order {
     @Column(name = "handoff_otp")
     private String handoffOtp;
 
+    @Column(name = "otp_created_at")
+    private Instant otpCreatedAt;
+
+    @Column(name = "otp_failed_attempts")
+    private int otpFailedAttempts = 0;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
+
+    @Column(name = "payment_reference")
+    private String paymentReference;
+
+    @Column(name = "payment_proof_url")
+    private String paymentProofUrl;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -56,6 +74,22 @@ public class Order {
     public String getHandoffOtp() { return handoffOtp; }
     public void setHandoffOtp(String handoffOtp) { this.handoffOtp = handoffOtp; }
 
+    public Instant getOtpCreatedAt() { return otpCreatedAt; }
+    public void setOtpCreatedAt(Instant otpCreatedAt) { this.otpCreatedAt = otpCreatedAt; }
+
+    public int getOtpFailedAttempts() { return otpFailedAttempts; }
+    public void setOtpFailedAttempts(int otpFailedAttempts) { this.otpFailedAttempts = otpFailedAttempts; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
+
+    public String getPaymentReference() { return paymentReference; }
+    public void setPaymentReference(String paymentReference) { this.paymentReference = paymentReference; }
+
+    public String getPaymentProofUrl() { return paymentProofUrl; }
+    public void setPaymentProofUrl(String paymentProofUrl) { this.paymentProofUrl = paymentProofUrl; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }
+

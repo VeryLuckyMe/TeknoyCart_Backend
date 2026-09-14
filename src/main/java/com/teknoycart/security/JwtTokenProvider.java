@@ -37,11 +37,30 @@ public class JwtTokenProvider {
     @Value("${supabase.issuer:https://chmtvasbhkbrvydbajnd.supabase.co/auth/v1}")
     private String expectedIssuer;
 
+    @Value("${jwt.secret:YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS}")
+    private String jwtSecret;
+
+    @Value("${jwt.expiration:86400000}")
+    private long jwtExpirationMs;
+
     private final ConcurrentHashMap<String, PublicKey> keyCache = new ConcurrentHashMap<>();
     private volatile long lastFetchAttemptTime = 0;
     private static final long MIN_REFRESH_INTERVAL_MS = 60_000; // 1 minute throttle on on-demand re-fetch
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public String generateToken(String email, String role) {
+        java.util.Date now = new java.util.Date();
+        java.util.Date expiryDate = new java.util.Date(now.getTime() + jwtExpirationMs);
+
+        return Jwts.builder()
+                .setSubject(email)
+                .claim("role", role)
+                .setIssuedAt(now)
+                .setExpiration(expiryDate)
+                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256)
+                .compact();
+    }
 
     @PostConstruct
     public void init() {
