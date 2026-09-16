@@ -56,5 +56,5 @@ supabase:
   anon-key: ${SUPABASE_ANON_KEY:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I}
 
 cors:
-  allowed-origins: https://teknoy-cart-web.vercel.app
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:https://teknoy-cart-web.vercel.app,http://localhost:*,http://127.0.0.1:*}
 
