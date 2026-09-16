@@ -261,19 +261,18 @@ public class AuthController {
             ));
         }
 
-        // 3. Validate Password with Supabase GoTrue (or fallback BCrypt for seed demo users)
+        // 3. Validate Password: Check Supabase GoTrue first (single source of truth)
         boolean authenticated = false;
-        Map<String, Object> supabaseSession = null;
+        Map<String, Object> supabaseSession = authenticateWithSupabase(email, password);
 
-        if ("SUPABASE_AUTH_MANAGED".equals(user.getPasswordHash())) {
-            supabaseSession = authenticateWithSupabase(email, password);
-            authenticated = (supabaseSession != null);
+        if (supabaseSession != null) {
+            authenticated = true;
+            if (!"SUPABASE_AUTH_MANAGED".equals(user.getPasswordHash())) {
+                user.setPasswordHash("SUPABASE_AUTH_MANAGED");
+            }
         } else if (user.getPasswordHash() != null && user.getPasswordHash().startsWith("$2a$")) {
+            // Fallback for legacy seed demo users that only exist in local BCrypt seed
             authenticated = passwordEncoder.matches(password, user.getPasswordHash());
-        } else {
-            // Fallback try GoTrue first, then encoder
-            supabaseSession = authenticateWithSupabase(email, password);
-            authenticated = (supabaseSession != null) || passwordEncoder.matches(password, user.getPasswordHash());
         }
 
         if (!authenticated) {
