@@ -39,11 +39,12 @@ server:
   servlet:
     context-path: /api
   error:
-    include-message: always
-    include-binding-errors: always
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
 
 jwt:
-  secret: ${JWT_SECRET:YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS}
+  secret: ${JWT_SECRET}
   expiration: 86400000 # 24 Hours in milliseconds
 
 brevo:
@@ -53,4 +54,7 @@ brevo:
 supabase:
   url: ${SUPABASE_URL:https://chmtvasbhkbrvydbajnd.supabase.co}
   anon-key: ${SUPABASE_ANON_KEY:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I}
+
+cors:
+  allowed-origins: https://teknoy-cart-web.vercel.app
 

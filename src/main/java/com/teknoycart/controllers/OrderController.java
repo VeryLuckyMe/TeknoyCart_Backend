@@ -14,7 +14,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Map;
 import java.util.UUID;
 
-@CrossOrigin
 @RestController
 @RequestMapping("/orders")
 public class OrderController {

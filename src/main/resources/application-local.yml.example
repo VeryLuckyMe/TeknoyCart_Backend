@@ -6,6 +6,7 @@
 #    cp src/main/resources/application-local.yml.example src/main/resources/application-local.yml
 # 2. Populate your local secrets below.
 # 3. `application-local.yml` is explicitly ignored by .gitignore to protect secrets.
+# 4. The jwt.secret is REQUIRED — the app will not start without it.
 # ==============================================================================
 
 spring:
@@ -18,7 +19,15 @@ spring:
     password: your-database-password
 
 jwt:
+  # REQUIRED: Without this, the app will fail to start (no production fallback)
   secret: your-secure-random-256-bit-jwt-secret-key-here
+
+# Restore verbose errors for local debugging (production defaults to never)
+server:
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: on_param
 
 brevo:
   api:

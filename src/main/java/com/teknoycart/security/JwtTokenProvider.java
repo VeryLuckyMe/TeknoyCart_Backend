@@ -37,7 +37,7 @@ public class JwtTokenProvider {
     @Value("${supabase.issuer:https://chmtvasbhkbrvydbajnd.supabase.co/auth/v1}")
     private String expectedIssuer;
 
-    @Value("${jwt.secret:YOUR_JWT_SUPER_SECRET_KEY_FOR_TEKNOYCART_TOKEN_GENERATION_MINIMUM_256_BITS}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Value("${jwt.expiration:86400000}")

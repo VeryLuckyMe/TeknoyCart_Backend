@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-@CrossOrigin
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -154,6 +153,8 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("verified", userOpt.get().isVerified()));
     }
 
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AuthController.class);
+
     @Autowired
     private com.teknoycart.security.JwtTokenProvider tokenProvider;
 
@@ -165,27 +166,39 @@ public class AuthController {
 
     private Map<String, Object> authenticateWithSupabase(String email, String password) {
         try {
-            String tokenUrl = supabaseUrl + "/auth/v1/token?grant_type=password";
+            String baseUrl = (supabaseUrl != null && !supabaseUrl.isBlank()) 
+                    ? supabaseUrl.trim().replaceAll("/+$", "") 
+                    : "https://chmtvasbhkbrvydbajnd.supabase.co";
+            String tokenUrl = baseUrl + "/auth/v1/token?grant_type=password";
+            String anonKey = (supabaseAnonKey != null && !supabaseAnonKey.isBlank()) 
+                    ? supabaseAnonKey.trim().replaceAll("^\"|\"$", "") 
+                    : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I";
+
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             String requestBody = mapper.writeValueAsString(Map.of(
                     "email", email,
                     "password", password
             ));
 
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                    .build();
             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(tokenUrl))
                     .header("Content-Type", "application/json")
-                    .header("apikey", supabaseAnonKey)
+                    .header("apikey", anonKey)
                     .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
             java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return mapper.readValue(response.body(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            } else {
+                logger.warn("Supabase Auth rejected login for {}: status={}, body={}", email, response.statusCode(), response.body());
+                return null;
             }
-            return null;
         } catch (Exception e) {
+            logger.error("Exception connecting to Supabase Auth: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -316,6 +329,88 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Server-authoritative seller upgrade endpoint.
+     * Replaces the insecure client-side direct Supabase update.
+     * Requires authentication via JWT.
+     */
+    @PostMapping("/request-seller-upgrade")
+    public ResponseEntity<?> requestSellerUpgrade() {
+        // Extract authenticated user from security context
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "type", "UNAUTHORIZED",
+                    "message", "Authentication required."
+            ));
+        }
+
+        String email = null;
+        if (auth.getPrincipal() instanceof com.teknoycart.security.UserPrincipal) {
+            email = ((com.teknoycart.security.UserPrincipal) auth.getPrincipal()).getEmail();
+        }
+
+        if (email == null) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "type", "UNAUTHORIZED",
+                    "message", "Unable to identify user."
+            ));
+        }
+
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "type", "USER_NOT_FOUND",
+                    "message", "User account not found."
+            ));
+        }
+
+        User user = userOpt.get();
+
+        // Validation: must be a verified BUYER, not locked
+        if (!"BUYER".equalsIgnoreCase(user.getRole())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "type", "INVALID_ROLE",
+                    "message", "Only BUYER accounts can request a seller upgrade."
+            ));
+        }
+
+        if (!user.isVerified()) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "type", "EMAIL_UNVERIFIED",
+                    "message", "Email verification is required before upgrading."
+            ));
+        }
+
+        if (user.isLocked()) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "type", "ACCOUNT_LOCKED",
+                    "message", "Account is locked. Cannot process upgrade request."
+            ));
+        }
+
+        // Perform server-side upgrade
+        user.setRole("SELLER");
+        user.setSellerVerified(false);
+        userRepository.save(user);
+
+        Map<String, Object> sanitizedUser = Map.of(
+                "userId", user.getUserId() != null ? user.getUserId().toString() : "",
+                "fullName", user.getFullName() != null ? user.getFullName() : "",
+                "email", user.getEmail(),
+                "role", user.getRole(),
+                "isVerified", user.isVerified(),
+                "isSellerVerified", user.isSellerVerified()
+        );
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Seller upgrade request submitted. Admin will review your account.",
+                "user", sanitizedUser
+        ));
     }
 }
 
