@@ -1,8 +1,9 @@
 -- ==============================================================================
--- P4 Migration: Security Hardening — Role INSERT Trigger + UPDATE Trigger Fix
+-- P4 Migration: Security Hardening — Role INSERT Trigger + UPDATE Trigger Fix (v2)
 -- ==============================================================================
--- MANUAL DEPLOYMENT REQUIRED: Run this in the Supabase SQL Editor BEFORE
--- deploying the backend. This migration cannot be applied automatically.
+-- Fixes trigger bypass check to support Supabase connection poolers where
+-- current_user is 'postgres.project_ref' and direct JDBC has null jwt_role.
+-- Run this in the Supabase SQL Editor.
 -- ==============================================================================
 
 -- 1. INSERT trigger: Force role = 'BUYER' on every new user inserted by
@@ -13,12 +14,15 @@ RETURNS TRIGGER AS $$
 DECLARE
     jwt_role text := current_setting('request.jwt.claim.role', true);
 BEGIN
-    -- Allow service_role and postgres superuser to set any role
-    IF current_user = 'postgres' OR jwt_role = 'service_role' THEN
+    -- Allow trusted callers: direct backend/JDBC poolers and service_role
+    IF jwt_role IS NULL 
+       OR jwt_role = 'service_role' 
+       OR current_user LIKE 'postgres%' 
+       OR session_user LIKE 'postgres%' THEN
         RETURN NEW;
     END IF;
 
-    -- Force all client-side inserts to BUYER with unverified seller status
+    -- Force all client-side inserts (anon/authenticated) to BUYER with unverified seller status
     NEW.role := 'BUYER';
     NEW.is_seller_verified := false;
 
@@ -32,16 +36,18 @@ CREATE TRIGGER trg_enforce_default_role_on_insert
     FOR EACH ROW
     EXECUTE FUNCTION public.enforce_default_role_on_insert();
 
--- 2. Extend the existing UPDATE trigger to also protect is_seller_verified
---    and failed_attempts from client-side tampering.
---    This replaces the existing function body with the enhanced version.
+-- 2. Extend the existing UPDATE trigger to protect is_seller_verified,
+--    role, is_verified, lockout, and failed_attempts from client-side tampering.
 CREATE OR REPLACE FUNCTION public.protect_user_security_columns()
 RETURNS TRIGGER AS $$
 DECLARE
     jwt_role text := current_setting('request.jwt.claim.role', true);
 BEGIN
-    -- Allow service_role and postgres superuser to modify any column
-    IF current_user = 'postgres' OR jwt_role = 'service_role' THEN
+    -- Allow trusted callers: direct backend/JDBC poolers and service_role
+    IF jwt_role IS NULL 
+       OR jwt_role = 'service_role' 
+       OR current_user LIKE 'postgres%' 
+       OR session_user LIKE 'postgres%' THEN
         RETURN NEW;
     END IF;
 
