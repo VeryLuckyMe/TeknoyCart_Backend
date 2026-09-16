@@ -166,15 +166,33 @@ public class AuthController {
 
     private volatile String lastSupabaseError = "none";
 
+    private String cleanUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return "https://chmtvasbhkbrvydbajnd.supabase.co";
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("https?://[^\\s)\\]\"']+").matcher(rawUrl);
+        if (m.find()) {
+            return m.group(0).replaceAll("/+$", "");
+        }
+        return rawUrl.trim().replaceAll("/+$", "");
+    }
+
+    private String cleanJwt(String rawKey) {
+        if (rawKey == null || rawKey.isBlank()) {
+            return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I";
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("eyJ[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_.-]+").matcher(rawKey);
+        if (m.find()) {
+            return m.group(0);
+        }
+        return rawKey.replaceAll("[\\r\\n\\t\\s\"]", "");
+    }
+
     private Map<String, Object> authenticateWithSupabase(String email, String password) {
         try {
-            String baseUrl = (supabaseUrl != null && !supabaseUrl.isBlank()) 
-                    ? supabaseUrl.replaceAll("[\\r\\n\\t\\s\"]", "").replaceAll("/+$", "") 
-                    : "https://chmtvasbhkbrvydbajnd.supabase.co";
+            String baseUrl = cleanUrl(supabaseUrl);
             String tokenUrl = baseUrl + "/auth/v1/token?grant_type=password";
-            String anonKey = (supabaseAnonKey != null && !supabaseAnonKey.isBlank()) 
-                    ? supabaseAnonKey.replaceAll("[\\r\\n\\t\\s\"]", "") 
-                    : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I";
+            String anonKey = cleanJwt(supabaseAnonKey);
 
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             String requestBody = mapper.writeValueAsString(Map.of(
@@ -433,8 +451,9 @@ public class AuthController {
     @GetMapping("/debug-supabase")
     public ResponseEntity<?> debugSupabase() {
         return ResponseEntity.ok(Map.of(
-                "supabaseUrl", supabaseUrl != null ? supabaseUrl : "null",
-                "supabaseAnonKeyLength", supabaseAnonKey != null ? supabaseAnonKey.length() : 0,
+                "rawSupabaseUrl", supabaseUrl != null ? supabaseUrl : "null",
+                "cleanedSupabaseUrl", cleanUrl(supabaseUrl),
+                "cleanedAnonKeyLength", cleanJwt(supabaseAnonKey).length(),
                 "lastSupabaseError", lastSupabaseError
         ));
     }
