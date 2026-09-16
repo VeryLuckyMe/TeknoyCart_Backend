@@ -309,7 +309,16 @@ public class AuthController {
         userRepository.save(user);
 
         // Generate stateless JWT session token signed using HMAC SHA-256
-        String token = tokenProvider.generateToken(user.getEmail(), user.getRole());
+        String token = null;
+        try {
+            token = tokenProvider.generateToken(user.getEmail(), user.getRole());
+        } catch (Exception e) {
+            logger.error("Error generating session JWT token: {}", e.getMessage(), e);
+        }
+
+        if (token == null && supabaseSession != null && supabaseSession.get("access_token") != null) {
+            token = supabaseSession.get("access_token").toString();
+        }
 
         // Build sanitized user map without sensitive security hashes/tokens
         Map<String, Object> sanitizedUser = Map.of(
@@ -322,7 +331,9 @@ public class AuthController {
         );
 
         java.util.HashMap<String, Object> response = new java.util.HashMap<>();
-        response.put("token", token);
+        if (token != null) {
+            response.put("token", token);
+        }
         response.put("user", sanitizedUser);
         if (supabaseSession != null) {
             response.put("session", supabaseSession);

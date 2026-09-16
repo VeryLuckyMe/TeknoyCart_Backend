@@ -37,11 +37,28 @@ public class JwtTokenProvider {
     @Value("${supabase.issuer:https://chmtvasbhkbrvydbajnd.supabase.co/auth/v1}")
     private String expectedIssuer;
 
-    @Value("${jwt.secret}")
+    @Value("${jwt.secret:}")
     private String jwtSecret;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
+
+    private volatile javax.crypto.SecretKey runtimeFallbackKey;
+
+    private javax.crypto.SecretKey getSigningKey() {
+        if (jwtSecret != null && !jwtSecret.isBlank() && jwtSecret.getBytes(StandardCharsets.UTF_8).length >= 32) {
+            return io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        }
+        if (runtimeFallbackKey == null) {
+            synchronized (this) {
+                if (runtimeFallbackKey == null) {
+                    logger.warn("JWT_SECRET environment variable is not configured or shorter than 256 bits. Using an ephemeral in-memory 256-bit secret key.");
+                    runtimeFallbackKey = io.jsonwebtoken.security.Keys.secretKeyFor(SignatureAlgorithm.HS256);
+                }
+            }
+        }
+        return runtimeFallbackKey;
+    }
 
     private final ConcurrentHashMap<String, PublicKey> keyCache = new ConcurrentHashMap<>();
     private volatile long lastFetchAttemptTime = 0;
@@ -55,10 +72,10 @@ public class JwtTokenProvider {
 
         return Jwts.builder()
                 .setSubject(email)
-                .claim("role", role)
+                .claim("role", role != null ? role : "BUYER")
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)), SignatureAlgorithm.HS256)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
