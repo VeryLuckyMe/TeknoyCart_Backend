@@ -164,14 +164,16 @@ public class AuthController {
     @org.springframework.beans.factory.annotation.Value("${supabase.anon-key:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I}")
     private String supabaseAnonKey;
 
+    private volatile String lastSupabaseError = "none";
+
     private Map<String, Object> authenticateWithSupabase(String email, String password) {
         try {
             String baseUrl = (supabaseUrl != null && !supabaseUrl.isBlank()) 
-                    ? supabaseUrl.trim().replaceAll("/+$", "") 
+                    ? supabaseUrl.replaceAll("[\\r\\n\\t\\s\"]", "").replaceAll("/+$", "") 
                     : "https://chmtvasbhkbrvydbajnd.supabase.co";
             String tokenUrl = baseUrl + "/auth/v1/token?grant_type=password";
             String anonKey = (supabaseAnonKey != null && !supabaseAnonKey.isBlank()) 
-                    ? supabaseAnonKey.trim().replaceAll("^\"|\"$", "") 
+                    ? supabaseAnonKey.replaceAll("[\\r\\n\\t\\s\"]", "") 
                     : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I";
 
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -187,17 +189,21 @@ public class AuthController {
                     .uri(java.net.URI.create(tokenUrl))
                     .header("Content-Type", "application/json")
                     .header("apikey", anonKey)
+                    .header("Authorization", "Bearer " + anonKey)
                     .POST(java.net.http.HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
             java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
+                lastSupabaseError = "success (200)";
                 return mapper.readValue(response.body(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
             } else {
+                lastSupabaseError = "status=" + response.statusCode() + ", body=" + response.body();
                 logger.warn("Supabase Auth rejected login for {}: status={}, body={}", email, response.statusCode(), response.body());
                 return null;
             }
         } catch (Exception e) {
+            lastSupabaseError = "exception=" + e.getClass().getName() + ": " + e.getMessage();
             logger.error("Exception connecting to Supabase Auth: {}", e.getMessage(), e);
             return null;
         }
@@ -294,11 +300,12 @@ public class AuthController {
 
             userRepository.save(user);
             int remaining = 5 - attempts;
-            return ResponseEntity.badRequest().body(Map.of(
-                    "type", "INVALID_CREDENTIALS",
-                    "message", "Invalid email or password. " + remaining + " attempts remaining before lockout.",
-                    "attemptsRemaining", remaining
-            ));
+            java.util.Map<String, Object> err = new java.util.HashMap<>();
+            err.put("type", "INVALID_CREDENTIALS");
+            err.put("message", "Invalid email or password. " + remaining + " attempts remaining before lockout.");
+            err.put("attemptsRemaining", remaining);
+            err.put("debugAuthError", lastSupabaseError);
+            return ResponseEntity.badRequest().body(err);
         }
 
         // 4. Successful login: reset failed attempts & lockout state
@@ -420,6 +427,15 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "message", "Seller upgrade request submitted. Admin will review your account.",
                 "user", sanitizedUser
+        ));
+    }
+
+    @GetMapping("/debug-supabase")
+    public ResponseEntity<?> debugSupabase() {
+        return ResponseEntity.ok(Map.of(
+                "supabaseUrl", supabaseUrl != null ? supabaseUrl : "null",
+                "supabaseAnonKeyLength", supabaseAnonKey != null ? supabaseAnonKey.length() : 0,
+                "lastSupabaseError", lastSupabaseError
         ));
     }
 }
