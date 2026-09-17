@@ -49,7 +49,7 @@ jwt:
 
 brevo:
   api:
-    key: ${BREVO_API_KEY}
+    key: ${BREVO_API_KEY:}
 
 supabase:
   url: ${SUPABASE_URL:https://chmtvasbhkbrvydbajnd.supabase.co}

@@ -1,5 +1,7 @@
 package com.teknoycart.services;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Async;
@@ -9,24 +11,47 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class EmailService {
 
-    @Value("${brevo.api.key}")
+    private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+
+    @Value("${brevo.api.key:}")
     private String brevoApiKey;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
+    public void setBrevoApiKey(String brevoApiKey) {
+        this.brevoApiKey = brevoApiKey;
+    }
+
     @Async
-    public void sendVerificationEmail(String recipientEmail, String recipientName, String verificationToken) {
+    public CompletableFuture<Boolean> sendVerificationEmail(String recipientEmail, String recipientName, String verificationToken) {
+        boolean success = sendVerificationEmailSync(recipientEmail, recipientName, verificationToken);
+        return CompletableFuture.completedFuture(success);
+    }
+
+    public boolean sendVerificationEmailSync(String recipientEmail, String recipientName, String verificationToken) {
         String verifyUrl = "https://teknoycart-backend.onrender.com/api/auth/verify?token=" + verificationToken;
-        System.out.println("=========================================================================");
-        System.out.println("VERIFICATION LINK GENERATED FOR " + recipientEmail + ":");
-        System.out.println(verifyUrl);
-        System.out.println("=========================================================================");
+        log.info("=========================================================================");
+        log.info("VERIFICATION LINK GENERATED FOR {}:", recipientEmail);
+        log.info("{}", verifyUrl);
+        log.info("=========================================================================");
+
+        if (brevoApiKey == null || brevoApiKey.trim().isEmpty() || "PLACEHOLDER".equalsIgnoreCase(brevoApiKey.trim())) {
+            log.error("********************************************************************************");
+            log.error("BREVO EMAIL DISPATCH FAILED: 'brevo.api.key' (BREVO_API_KEY) is not configured!");
+            log.error("Recipient: {} <{}>", recipientName, recipientEmail);
+            log.error("Verification URL: {}", verifyUrl);
+            log.error("Notice: Email dispatch was skipped to prevent blocking user registration.");
+            log.error("Please ensure BREVO_API_KEY is configured in your application environment.");
+            log.error("********************************************************************************");
+            return false;
+        }
 
         try {
             // Premium HTML Email Template with CSS branding matching CIT-U
@@ -55,8 +80,6 @@ public class EmailService {
                     + "</div>";
 
             // Prepare JSON payload for Brevo Transactional Email REST API
-            // Sender can be custom-named, but will show as sent via Brevo.
-            // Recipient can be ANY email address (no sandbox restrictions!)
             Map<String, Object> payload = Map.of(
                 "sender", Map.of("name", "TeknoyCart CIT-U", "email", "clarencekirkmc@gmail.com"),
                 "to", List.of(Map.of("email", recipientEmail, "name", recipientName)),
@@ -77,13 +100,21 @@ public class EmailService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200 || response.statusCode() == 201 || response.statusCode() == 202) {
-                System.out.println("Email successfully dispatched via Brevo REST API to " + recipientEmail);
+                log.info("Email successfully dispatched via Brevo REST API to {}", recipientEmail);
+                return true;
             } else {
-                System.err.println("Brevo API failed to dispatch email. Status code: " + response.statusCode() + ", Response: " + response.body());
+                log.error("********************************************************************************");
+                log.error("BREVO API ERROR: Failed to dispatch email. HTTP Status: {}, Response: {}", response.statusCode(), response.body());
+                log.error("Recipient: {} <{}>", recipientName, recipientEmail);
+                log.error("********************************************************************************");
+                return false;
             }
 
         } catch (Exception e) {
-            System.err.println("Failed to send verification email via Brevo API: " + e.getMessage());
+            log.error("********************************************************************************");
+            log.error("BREVO API EXCEPTION: Failed to send verification email to {}: {}", recipientEmail, e.getMessage());
+            log.error("********************************************************************************");
+            return false;
         }
     }
 }
