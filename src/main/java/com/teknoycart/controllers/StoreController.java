@@ -35,8 +35,11 @@ public class StoreController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<?> searchStoresByName(@RequestParam("name") String name) {
-        return storeRepository.findByStoreName(name)
+    public ResponseEntity<?> searchStoresByName(@RequestParam(value = "name", required = false) String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Store name parameter cannot be empty.");
+        }
+        return storeRepository.findByStoreName(name.trim())
                 .map(this::mapToPublicDTO)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -45,7 +48,7 @@ public class StoreController {
     private PublicStoreDTO mapToPublicDTO(Store store) {
         PublicStoreDTO dto = new PublicStoreDTO();
         dto.setStoreId(store.getStoreId());
-        dto.setStoreName(store.getStoreName());
+        dto.setStoreName(store.getStoreName() != null ? store.getStoreName() : "Unnamed Store");
         dto.setBannerUrl(store.getBannerUrl());
         dto.setLogoUrl(store.getLogoUrl());
         dto.setRating(store.getRating());
@@ -56,7 +59,9 @@ public class StoreController {
             dto.setPublicSupportEmail(store.getPublicSupportEmail());
         } else {
             // Safe fallback template based on the store name
-            String safeEmail = "support." + store.getStoreName().toLowerCase().replaceAll("\\s+", "") + "@cit.edu";
+            String rawName = store.getStoreName() != null ? store.getStoreName().trim() : "";
+            String safeStoreSlug = rawName.isEmpty() ? "store" : rawName.toLowerCase().replaceAll("\\s+", "");
+            String safeEmail = "support." + safeStoreSlug + "@cit.edu";
             dto.setPublicSupportEmail(safeEmail);
         }
 

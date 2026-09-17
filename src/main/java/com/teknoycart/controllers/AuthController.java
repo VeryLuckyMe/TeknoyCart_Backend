@@ -63,11 +63,15 @@ public class AuthController {
         User savedUser = userRepository.save(user);
 
         if ("SELLER".equalsIgnoreCase(savedUser.getRole())) {
+            String storeName = user.getStoreName() != null ? user.getStoreName().trim() : "";
+            if (storeName.isEmpty()) {
+                storeName = savedUser.getFullName() != null ? savedUser.getFullName() + "'s Store" : "Store";
+            }
             com.teknoycart.models.Store store = new com.teknoycart.models.Store();
-            store.setStoreName(user.getStoreName().trim());
+            store.setStoreName(storeName);
             store.setOwner(savedUser);
-            store.setPublicSupportEmail(
-                    "support." + user.getStoreName().toLowerCase().replaceAll("\\s+", "") + "@cit.edu");
+            String storeSlug = storeName.toLowerCase().replaceAll("\\s+", "");
+            store.setPublicSupportEmail("support." + storeSlug + "@cit.edu");
             storeRepository.save(store);
         }
 
@@ -445,16 +449,6 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "message", "Seller upgrade request submitted. Admin will review your account.",
                 "user", sanitizedUser
-        ));
-    }
-
-    @GetMapping("/debug-supabase")
-    public ResponseEntity<?> debugSupabase() {
-        return ResponseEntity.ok(Map.of(
-                "rawSupabaseUrl", supabaseUrl != null ? supabaseUrl : "null",
-                "cleanedSupabaseUrl", cleanUrl(supabaseUrl),
-                "cleanedAnonKeyLength", cleanJwt(supabaseAnonKey).length(),
-                "lastSupabaseError", lastSupabaseError
         ));
     }
 }
