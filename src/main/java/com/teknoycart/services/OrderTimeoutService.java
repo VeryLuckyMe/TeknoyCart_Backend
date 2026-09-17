@@ -39,6 +39,29 @@ public class OrderTimeoutService {
     @Autowired
     private OrderAuditLogRepository auditLogRepository;
 
+    @Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    /**
+     * Sweeps expired reservations every 5 minutes (300,000 ms).
+     * Single Source of Truth: release_expired_reservations() ONLY updates orders to CANCELLED.
+     * The DB trigger trg_order_status_inventory_sync decrements reserved_qty.
+     */
+    @Scheduled(fixedRate = 300000)
+    @Transactional
+    public void sweepExpiredReservations() {
+        if (jdbcTemplate != null) {
+            try {
+                Integer released = jdbcTemplate.queryForObject("SELECT release_expired_reservations();", Integer.class);
+                if (released != null && released > 0) {
+                    log.info("Sweep successfully released {} expired reservations.", released);
+                }
+            } catch (Exception e) {
+                log.debug("Notice on release_expired_reservations: {}", e.getMessage());
+            }
+        }
+    }
+
     /**
      * Runs every hour to check for stuck orders.
      */
