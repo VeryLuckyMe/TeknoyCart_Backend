@@ -20,18 +20,22 @@ import java.util.List;
  * Scheduled job that detects and transitions orders stuck in intermediate states.
  *
  * - MEETUP_SCHEDULED with an OTP older than 24 hours → NEEDS_REVIEW
- * - HANDOFF_PENDING for more than 48 hours without buyer confirmation → COMPLETED (auto-release)
+ * - HANDOFF_PENDING for more than 24 hours without buyer return claim → COMPLETED (auto-release)
+ * - REFUND_REQUESTED for more than 24 hours without seller action → DISPUTED (auto-escalation)
  */
 @Service
 public class OrderTimeoutService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderTimeoutService.class);
 
-    /** If a meetup OTP is older than 24h, the meetup is probably stale */
+    /** If a meetup OTP is older than 24h, the meetup is stale and needs rescheduling */
     private static final Duration MEETUP_STALE_THRESHOLD = Duration.ofHours(24);
 
-    /** If buyer hasn't confirmed receipt within 48h of handoff, auto-complete */
-    private static final Duration HANDOFF_AUTO_COMPLETE_THRESHOLD = Duration.ofHours(48);
+    /** Canonical 24-Hour TeknoyCart Guarantee Inspection Window */
+    private static final Duration HANDOFF_AUTO_COMPLETE_THRESHOLD = Duration.ofHours(24);
+
+    /** If seller hasn't resolved refund within 24h of request, auto-escalate to DISPUTED */
+    private static final Duration REFUND_STALE_THRESHOLD = Duration.ofHours(24);
 
     @Autowired
     private OrderRepository orderRepository;
@@ -72,10 +76,11 @@ public class OrderTimeoutService {
 
         int staleMeetups = processStaleScheduledMeetups();
         int autoCompleted = processStaleHandoffs();
+        int escalatedRefunds = processStaleRefundRequests();
 
-        if (staleMeetups > 0 || autoCompleted > 0) {
-            log.info("Timeout job completed: {} meetups flagged for review, {} handoffs auto-completed",
-                    staleMeetups, autoCompleted);
+        if (staleMeetups > 0 || autoCompleted > 0 || escalatedRefunds > 0) {
+            log.info("Timeout job completed: {} meetups flagged for review, {} handoffs auto-completed, {} refunds escalated to dispute",
+                    staleMeetups, autoCompleted, escalatedRefunds);
         }
     }
 
@@ -121,10 +126,21 @@ public class OrderTimeoutService {
         int count = 0;
 
         for (Order order : pendingOrders) {
-            OrderAuditLog latestLog = auditLogRepository.findTopByOrderIdOrderByCreatedAtDesc(order.getId());
-            if (latestLog == null || latestLog.getCreatedAt() == null) continue;
+            if (order.getStatus() != OrderStatus.HANDOFF_PENDING) {
+                continue;
+            }
 
-            Instant handoffTime = latestLog.getCreatedAt();
+            Instant handoffTime = order.getHandoffCompletedAt();
+            if (handoffTime == null) {
+                OrderAuditLog latestLog = auditLogRepository.findTopByOrderIdOrderByCreatedAtDesc(order.getId());
+                if (latestLog != null && latestLog.getCreatedAt() != null) {
+                    handoffTime = latestLog.getCreatedAt();
+                }
+            }
+
+            if (handoffTime == null) {
+                continue;
+            }
 
             if (handoffTime.plus(HANDOFF_AUTO_COMPLETE_THRESHOLD).isBefore(Instant.now())) {
                 OrderStatus oldStatus = order.getStatus();
@@ -133,9 +149,37 @@ public class OrderTimeoutService {
                 orderRepository.save(order);
 
                 logSystemAudit(order, oldStatus, OrderStatus.COMPLETED,
-                        "SYSTEM_AUTO_COMPLETE - Buyer did not dispute within 48h of handoff");
+                        "SYSTEM_AUTO_COMPLETE - Buyer did not dispute within 24h of handoff");
                 count++;
-                log.info("Order {} auto-completed (48h handoff timeout)", order.getId());
+                log.info("Order {} auto-completed (24h handoff inspection guarantee timeout)", order.getId());
+            }
+        }
+        return count;
+    }
+
+    private int processStaleRefundRequests() {
+        List<Order> staleRefunds = orderRepository.findByStatus(OrderStatus.REFUND_REQUESTED);
+        int count = 0;
+        Instant cutoff = Instant.now().minus(REFUND_STALE_THRESHOLD);
+
+        for (Order order : staleRefunds) {
+            if (order.getStatus() != OrderStatus.REFUND_REQUESTED) {
+                continue;
+            }
+
+            OrderAuditLog latestLog = auditLogRepository.findTopByOrderIdOrderByCreatedAtDesc(order.getId());
+            if (latestLog == null || latestLog.getCreatedAt() == null) continue;
+
+            if (latestLog.getCreatedAt().isBefore(cutoff)) {
+                OrderStatus oldStatus = order.getStatus();
+                order.setStatus(OrderStatus.DISPUTED);
+                order.setDisputeReason("AUTO_ESCALATED: Seller did not issue refund within 24 hours of request");
+                orderRepository.save(order);
+
+                logSystemAudit(order, oldStatus, OrderStatus.DISPUTED,
+                        "SYSTEM_AUTO_DISPUTE - Seller did not issue refund within 24h of request");
+                count++;
+                log.info("Order {} auto-escalated to DISPUTED (stale refund request)", order.getId());
             }
         }
         return count;
@@ -145,7 +189,7 @@ public class OrderTimeoutService {
         OrderAuditLog auditLog = new OrderAuditLog();
         auditLog.setOrderId(order.getId());
         auditLog.setActorId(null); // SYSTEM action
-        auditLog.setPreviousStatus(oldStatus.name());
+        auditLog.setPreviousStatus(oldStatus != null ? oldStatus.name() : null);
         auditLog.setNewStatus(newStatus.name());
         auditLog.setMethod(method);
         auditLogRepository.save(auditLog);

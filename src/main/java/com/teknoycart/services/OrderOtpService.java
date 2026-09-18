@@ -58,4 +58,30 @@ public class OrderOtpService {
 
         return newAttempts;
     }
+
+    /**
+     * Records a failed return OTP attempt in an autonomous transaction (Propagation.REQUIRES_NEW).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int recordFailedReturnAttempt(UUID orderId, UUID actorId, int maxAttempts) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+
+        int newAttempts = order.getReturnOtpFailedAttempts() + 1;
+        order.setReturnOtpFailedAttempts(newAttempts);
+        orderRepository.saveAndFlush(order);
+
+        if (newAttempts >= maxAttempts) {
+            OrderAuditLog auditLog = new OrderAuditLog();
+            auditLog.setOrderId(order.getId());
+            auditLog.setActorId(actorId);
+            auditLog.setPreviousStatus(order.getStatus() != null ? order.getStatus().name() : null);
+            auditLog.setNewStatus(order.getStatus() != null ? order.getStatus().name() : null);
+            auditLog.setMethod("RETURN_OTP_LOCKOUT");
+            auditLog.setCreatedAt(Instant.now());
+            auditLogRepository.saveAndFlush(auditLog);
+        }
+
+        return newAttempts;
+    }
 }

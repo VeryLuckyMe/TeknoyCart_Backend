@@ -1,22 +1,30 @@
 package com.teknoycart.models;
 
 public enum OrderStatus {
-    // New state machine statuses
+    // Core state machine statuses
     PLACED,
     ACCEPTED,
+    PAYMENT_SUBMITTED,
+    PAYMENT_VERIFIED,
     MEETUP_SCHEDULED,
+    NEEDS_REVIEW,
     HANDOFF_PENDING,
     COMPLETED,
-    CANCELLED,
-    DISPUTED,
     REFUND_REQUESTED,
-    NEEDS_REVIEW,
+    RETURN_REQUESTED,
+    RETURN_APPROVED,
+    DISPUTED,
+    CANCELLED,
+    RETURN_COMPLETED,
+    REFUND_COMPLETED,
 
-    // Legacy statuses from the old Supabase-driven flow (kept for backward compatibility)
+    // Legacy statuses from the old Supabase-driven flow (retained strictly for backward compatibility deserialization)
+    @Deprecated
     INQUIRY_SENT,
+    @Deprecated
     PENDING_SELLER_ACCEPT,
+    @Deprecated
     APPROVED,
-    SELLER_ACCEPTED,
-    PAYMENT_SUBMITTED,
-    PAYMENT_VERIFIED
+    @Deprecated
+    SELLER_ACCEPTED
 }

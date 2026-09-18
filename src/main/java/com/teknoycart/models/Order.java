@@ -1,7 +1,6 @@
 package com.teknoycart.models;
 
 import jakarta.persistence.*;
-import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -39,6 +38,30 @@ public class Order {
     @Column(name = "otp_failed_attempts")
     private int otpFailedAttempts = 0;
 
+    @Column(name = "handoff_completed_at")
+    private Instant handoffCompletedAt;
+
+    @Column(name = "return_otp")
+    private String returnOtp;
+
+    @Column(name = "return_otp_created_at")
+    private Instant returnOtpCreatedAt;
+
+    @Column(name = "return_otp_failed_attempts")
+    private int returnOtpFailedAttempts = 0;
+
+    @Column(name = "return_completed_at")
+    private Instant returnCompletedAt;
+
+    @Column(name = "refund_reference")
+    private String refundReference;
+
+    @Column(name = "dispute_reason")
+    private String disputeReason;
+
+    @Column(name = "dispute_ruling")
+    private String disputeRuling;
+
     @Version
     @Column(name = "version")
     private Long version;
@@ -53,43 +76,171 @@ public class Order {
     private LocalDateTime createdAt;
 
     // Getters and Setters
-    public UUID getId() { return id; }
-    public void setId(UUID id) { this.id = id; }
+    public UUID getId() {
+        return id;
+    }
 
-    public UUID getBuyerId() { return buyerId; }
-    public void setBuyerId(UUID buyerId) { this.buyerId = buyerId; }
+    public void setId(UUID id) {
+        this.id = id;
+    }
 
-    public UUID getSellerId() { return sellerId; }
-    public void setSellerId(UUID sellerId) { this.sellerId = sellerId; }
+    public UUID getBuyerId() {
+        return buyerId;
+    }
 
-    public OrderStatus getStatus() { return status; }
-    public void setStatus(OrderStatus status) { this.status = status; }
+    public void setBuyerId(UUID buyerId) {
+        this.buyerId = buyerId;
+    }
 
-    public boolean isSellerHandedOff() { return sellerHandedOff; }
-    public void setSellerHandedOff(boolean sellerHandedOff) { this.sellerHandedOff = sellerHandedOff; }
+    public UUID getSellerId() {
+        return sellerId;
+    }
 
-    public boolean isBuyerConfirmedReceipt() { return buyerConfirmedReceipt; }
-    public void setBuyerConfirmedReceipt(boolean buyerConfirmedReceipt) { this.buyerConfirmedReceipt = buyerConfirmedReceipt; }
+    public void setSellerId(UUID sellerId) {
+        this.sellerId = sellerId;
+    }
 
-    public String getHandoffOtp() { return handoffOtp; }
-    public void setHandoffOtp(String handoffOtp) { this.handoffOtp = handoffOtp; }
+    public OrderStatus getStatus() {
+        return status;
+    }
 
-    public Instant getOtpCreatedAt() { return otpCreatedAt; }
-    public void setOtpCreatedAt(Instant otpCreatedAt) { this.otpCreatedAt = otpCreatedAt; }
+    public void setStatus(OrderStatus status) {
+        this.status = status;
+    }
 
-    public int getOtpFailedAttempts() { return otpFailedAttempts; }
-    public void setOtpFailedAttempts(int otpFailedAttempts) { this.otpFailedAttempts = otpFailedAttempts; }
+    public boolean isSellerHandedOff() {
+        return sellerHandedOff;
+    }
 
-    public Long getVersion() { return version; }
-    public void setVersion(Long version) { this.version = version; }
+    public void setSellerHandedOff(boolean sellerHandedOff) {
+        this.sellerHandedOff = sellerHandedOff;
+    }
 
-    public String getPaymentReference() { return paymentReference; }
-    public void setPaymentReference(String paymentReference) { this.paymentReference = paymentReference; }
+    public boolean isBuyerConfirmedReceipt() {
+        return buyerConfirmedReceipt;
+    }
 
-    public String getPaymentProofUrl() { return paymentProofUrl; }
-    public void setPaymentProofUrl(String paymentProofUrl) { this.paymentProofUrl = paymentProofUrl; }
+    public void setBuyerConfirmedReceipt(boolean buyerConfirmedReceipt) {
+        this.buyerConfirmedReceipt = buyerConfirmedReceipt;
+    }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public String getHandoffOtp() {
+        return handoffOtp;
+    }
+
+    public void setHandoffOtp(String handoffOtp) {
+        this.handoffOtp = handoffOtp;
+    }
+
+    public Instant getOtpCreatedAt() {
+        return otpCreatedAt;
+    }
+
+    public void setOtpCreatedAt(Instant otpCreatedAt) {
+        this.otpCreatedAt = otpCreatedAt;
+    }
+
+    public int getOtpFailedAttempts() {
+        return otpFailedAttempts;
+    }
+
+    public void setOtpFailedAttempts(int otpFailedAttempts) {
+        this.otpFailedAttempts = otpFailedAttempts;
+    }
+
+    public Instant getHandoffCompletedAt() {
+        return handoffCompletedAt;
+    }
+
+    public void setHandoffCompletedAt(Instant handoffCompletedAt) {
+        this.handoffCompletedAt = handoffCompletedAt;
+    }
+
+    public String getReturnOtp() {
+        return returnOtp;
+    }
+
+    public void setReturnOtp(String returnOtp) {
+        this.returnOtp = returnOtp;
+    }
+
+    public Instant getReturnOtpCreatedAt() {
+        return returnOtpCreatedAt;
+    }
+
+    public void setReturnOtpCreatedAt(Instant returnOtpCreatedAt) {
+        this.returnOtpCreatedAt = returnOtpCreatedAt;
+    }
+
+    public int getReturnOtpFailedAttempts() {
+        return returnOtpFailedAttempts;
+    }
+
+    public void setReturnOtpFailedAttempts(int returnOtpFailedAttempts) {
+        this.returnOtpFailedAttempts = returnOtpFailedAttempts;
+    }
+
+    public Instant getReturnCompletedAt() {
+        return returnCompletedAt;
+    }
+
+    public void setReturnCompletedAt(Instant returnCompletedAt) {
+        this.returnCompletedAt = returnCompletedAt;
+    }
+
+    public String getRefundReference() {
+        return refundReference;
+    }
+
+    public void setRefundReference(String refundReference) {
+        this.refundReference = refundReference;
+    }
+
+    public String getDisputeReason() {
+        return disputeReason;
+    }
+
+    public void setDisputeReason(String disputeReason) {
+        this.disputeReason = disputeReason;
+    }
+
+    public String getDisputeRuling() {
+        return disputeRuling;
+    }
+
+    public void setDisputeRuling(String disputeRuling) {
+        this.disputeRuling = disputeRuling;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
+    public String getPaymentReference() {
+        return paymentReference;
+    }
+
+    public void setPaymentReference(String paymentReference) {
+        this.paymentReference = paymentReference;
+    }
+
+    public String getPaymentProofUrl() {
+        return paymentProofUrl;
+    }
+
+    public void setPaymentProofUrl(String paymentProofUrl) {
+        this.paymentProofUrl = paymentProofUrl;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }
-

@@ -17,6 +17,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseMigrationRunner.class);
 
     private static final String RLS_MIGRATION_VERSION = "V2__comprehensive_rls_lockdown";
+    private static final String LIFECYCLE_MIGRATION_VERSION = "V3__order_lifecycle_and_verification";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -40,8 +41,12 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             // No-op if already converted
         }
 
+        applyRlsMigration();
+        applyLifecycleMigration();
+    }
+
+    private void applyRlsMigration() {
         try {
-            // Check if RLS migration has already been executed to prevent policy drop/re-creation on every boot
             Integer count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
                 Integer.class,
@@ -68,6 +73,37 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             logger.error("Failed to apply Comprehensive RLS policies: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applyLifecycleMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                LIFECYCLE_MIGRATION_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Order lifecycle migration [{}] is already applied. Skipping DDL on boot.", LIFECYCLE_MIGRATION_VERSION);
+                return;
+            }
+
+            logger.info("Applying Order Lifecycle & Verification migration [{}]...", LIFECYCLE_MIGRATION_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_order_lifecycle.sql");
+            if (resource.exists()) {
+                String lifecycleSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(lifecycleSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    LIFECYCLE_MIGRATION_VERSION
+                );
+                logger.info("Successfully applied Order Lifecycle & Verification migration to database.");
+            } else {
+                logger.warn("Lifecycle migration script not found in classpath: db/migration_order_lifecycle.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply Order Lifecycle migration: {}", e.getMessage(), e);
         }
     }
 }

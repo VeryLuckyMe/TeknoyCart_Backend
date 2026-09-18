@@ -44,7 +44,8 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<Order> cancelOrder(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> payload) {
+    public ResponseEntity<Order> cancelOrder(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
         UUID actorId = getAuthenticatedUserId();
         String reason = payload != null ? payload.get("reason") : null;
         return ResponseEntity.ok(orderService.cancelOrder(id, actorId, reason));
@@ -69,18 +70,74 @@ public class OrderController {
         return ResponseEntity.ok(orderService.confirmReceipt(id, actorId));
     }
 
+    @PostMapping("/{id}/report-no-show")
+    public ResponseEntity<Order> reportNoShow(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String reason = payload != null ? payload.get("reason") : null;
+        return ResponseEntity.ok(orderService.reportNoShow(id, actorId, reason));
+    }
+
     @PostMapping("/{id}/refund")
-    public ResponseEntity<Order> requestRefund(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> payload) {
+    public ResponseEntity<Order> requestRefund(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
         UUID actorId = getAuthenticatedUserId();
         String reason = payload != null ? payload.get("reason") : null;
         String evidence = payload != null ? payload.get("evidence") : null;
         return ResponseEntity.ok(orderService.requestRefund(id, actorId, reason, evidence));
     }
 
+    @PostMapping("/{id}/approve-return")
+    public ResponseEntity<Order> approveReturn(@PathVariable UUID id) {
+        UUID actorId = getAuthenticatedUserId();
+        return ResponseEntity.ok(orderService.approveReturn(id, actorId));
+    }
+
+    @PostMapping("/{id}/schedule-return")
+    public ResponseEntity<Order> scheduleReturn(@PathVariable UUID id) {
+        UUID actorId = getAuthenticatedUserId();
+        return ResponseEntity.ok(orderService.approveReturn(id, actorId));
+    }
+
+    @PostMapping("/{id}/decline-return")
+    public ResponseEntity<Order> declineReturn(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String reason = payload != null ? payload.get("reason") : null;
+        return ResponseEntity.ok(orderService.declineReturn(id, actorId, reason));
+    }
+
+    @PostMapping("/{id}/verify-return-handoff")
+    public ResponseEntity<Order> verifyReturnHandoff(@PathVariable UUID id,
+            @RequestBody Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String otp = payload != null ? payload.get("otp") : null;
+        String refundReference = payload != null ? payload.get("refund_reference") : null;
+        return ResponseEntity.ok(orderService.verifyReturnHandoff(id, actorId, otp, refundReference));
+    }
+
+    @PostMapping("/{id}/resolve-dispute")
+    public ResponseEntity<Order> resolveDispute(@PathVariable UUID id,
+            @RequestBody Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String ruling = payload != null ? payload.get("ruling") : null;
+        String notes = payload != null ? payload.get("notes") : null;
+        return ResponseEntity.ok(orderService.resolveDispute(id, actorId, ruling, notes));
+    }
+
+    @PostMapping("/{id}/dispute")
+    public ResponseEntity<Order> escalateDispute(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String reason = payload != null ? payload.get("reason") : null;
+        return ResponseEntity.ok(orderService.escalateDispute(id, actorId, reason));
+    }
+
     @PostMapping("/{id}/submit-payment")
     public ResponseEntity<Order> submitPayment(@PathVariable UUID id, @RequestBody Map<String, String> payload) {
         UUID actorId = getAuthenticatedUserId();
-        String reference = payload != null ? payload.getOrDefault("payment_reference", payload.get("gcash_reference")) : null;
+        String reference = payload != null ? payload.getOrDefault("payment_reference", payload.get("gcash_reference"))
+                : null;
         String proofUrl = payload != null ? payload.get("payment_proof_url") : null;
         return ResponseEntity.ok(orderService.submitPayment(id, actorId, reference, proofUrl));
     }
@@ -92,7 +149,8 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/confirm-refund")
-    public ResponseEntity<Order> confirmRefund(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> payload) {
+    public ResponseEntity<Order> confirmRefund(@PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
         UUID actorId = getAuthenticatedUserId();
         String refundReference = payload != null ? payload.get("refund_reference") : null;
         return ResponseEntity.ok(orderService.confirmRefund(id, actorId, refundReference));
