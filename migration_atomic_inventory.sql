@@ -12,21 +12,36 @@ ADD COLUMN IF NOT EXISTS is_preorder_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE OR REPLACE FUNCTION trg_order_status_inventory_sync()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Meetup Completed -> Permanently deduct physical stock and clear reserved lock
-    IF NEW.status = 'COMPLETED' AND (OLD.status IS NULL OR OLD.status != 'COMPLETED') THEN
+    -- Physical Handoff Occurred (or Direct Completion):
+    -- Deduct physical stock and release reservation lock
+    IF (NEW.status = 'HANDOFF_PENDING' AND (OLD.status IS NULL OR OLD.status != 'HANDOFF_PENDING'))
+       OR (NEW.status = 'COMPLETED' AND (OLD.status IS NULL OR (OLD.status != 'COMPLETED' AND OLD.status != 'HANDOFF_PENDING' AND OLD.status NOT IN ('RETURN_REQUESTED', 'RETURN_APPROVED', 'DISPUTED')))) THEN
         UPDATE public.inventory
         SET stock_qty = GREATEST(0, stock_qty - COALESCE(NEW.quantity, 1)),
             reserved_qty = GREATEST(0, reserved_qty - COALESCE(NEW.quantity, 1)),
             last_updated = NOW()
         WHERE variant_id = NEW.variant_id;
 
-    -- Order Cancelled or Rejected -> Release the reserved hold back to available stock
-    ELSIF (NEW.status IN ('CANCELLED', 'REJECTED')) 
-          AND (OLD.status IS NULL OR OLD.status NOT IN ('CANCELLED', 'REJECTED')) THEN
+    -- Physical Return Completed:
+    -- Returned item physically handed back to seller -> replenish physical stock
+    ELSIF NEW.status = 'RETURN_COMPLETED' AND (OLD.status IS NULL OR OLD.status != 'RETURN_COMPLETED') THEN
         UPDATE public.inventory
-        SET reserved_qty = GREATEST(0, reserved_qty - COALESCE(NEW.quantity, 1)),
+        SET stock_qty = stock_qty + COALESCE(NEW.quantity, 1),
             last_updated = NOW()
         WHERE variant_id = NEW.variant_id;
+
+    -- Pre-Handoff Cancellation, Rejection, or Refund:
+    -- Item never left seller -> release the reserved hold back to available stock.
+    -- If handoff already completed (handoff_completed_at IS NOT NULL), reserved_qty was
+    -- already deducted at handoff and stock_qty already physically left the seller.
+    ELSIF (NEW.status IN ('CANCELLED', 'REJECTED', 'REFUND_COMPLETED')) 
+          AND (OLD.status IS NULL OR OLD.status NOT IN ('CANCELLED', 'REJECTED', 'REFUND_COMPLETED')) THEN
+        IF NEW.handoff_completed_at IS NULL THEN
+            UPDATE public.inventory
+            SET reserved_qty = GREATEST(0, reserved_qty - COALESCE(NEW.quantity, 1)),
+                last_updated = NOW()
+            WHERE variant_id = NEW.variant_id;
+        END IF;
     END IF;
 
     RETURN NEW;
@@ -38,6 +53,41 @@ CREATE TRIGGER trg_sync_order_status_to_inventory
 AFTER UPDATE OF status ON public.orders
 FOR EACH ROW
 EXECUTE FUNCTION trg_order_status_inventory_sync();
+
+-- 2b. Reconcile inventory holds RPC
+-- Recalculates reserved_qty based on exact sum of active in-flight pre-handoff orders.
+-- Clears orphaned/phantom reservations safely without altering legitimate orders.
+CREATE OR REPLACE FUNCTION reconcile_inventory_holds(p_variant_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_actual_reserved INT;
+    v_stock INT;
+    v_new_reserved INT;
+BEGIN
+    SELECT COALESCE(SUM(quantity), 0)
+    INTO v_actual_reserved
+    FROM public.orders
+    WHERE variant_id = p_variant_id
+      AND status IN ('PLACED', 'ACCEPTED', 'PAYMENT_SUBMITTED', 'PAYMENT_VERIFIED', 'MEETUP_SCHEDULED', 'NEEDS_REVIEW', 'REFUND_REQUESTED');
+
+    UPDATE public.inventory
+    SET reserved_qty = v_actual_reserved,
+        last_updated = NOW()
+    WHERE variant_id = p_variant_id
+    RETURNING stock_qty, reserved_qty INTO v_stock, v_new_reserved;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'variant_id', p_variant_id,
+        'stock_qty', v_stock,
+        'reserved_qty', v_new_reserved,
+        'available_qty', GREATEST(0, v_stock - v_new_reserved)
+    );
+END;
+$$;
 
 
 -- 3. Atomic reservation RPC with SELECT ... FOR UPDATE row-level locking

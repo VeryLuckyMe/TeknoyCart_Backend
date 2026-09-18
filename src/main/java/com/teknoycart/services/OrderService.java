@@ -509,6 +509,10 @@ public class OrderService {
             order.setReturnOtpCreatedAt(Instant.now());
             order.setReturnOtpFailedAttempts(0);
         } else if ("CANCEL".equals(upperRuling)) {
+            if (order.getHandoffCompletedAt() != null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Cannot CANCEL post-handoff dispute: goods were already transferred. Use REFUND_BUYER or RETURN_ITEM instead.");
+            }
             order.setStatus(OrderStatus.CANCELLED);
         } else {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown dispute ruling: " + ruling);

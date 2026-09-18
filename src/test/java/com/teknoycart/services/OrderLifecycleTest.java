@@ -160,4 +160,17 @@ public class OrderLifecycleTest {
         assertEquals(OrderStatus.REFUND_COMPLETED, order.getStatus());
         assertEquals("REFUND_BUYER", order.getDisputeRuling());
     }
+
+    @Test
+    @DisplayName("Admin Dispute Resolution: Post-handoff CANCEL ruling is blocked")
+    void testAdminDisputeResolutionPostHandoffCancelBlocked() {
+        Order order = createOrder(OrderStatus.DISPUTED);
+        order.setHandoffCompletedAt(Instant.now());
+        order = orderRepository.saveAndFlush(order);
+
+        final UUID orderId = order.getId();
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> {
+            orderService.resolveDispute(orderId, adminId, "CANCEL", "Attempted cancel post handoff");
+        });
+    }
 }
