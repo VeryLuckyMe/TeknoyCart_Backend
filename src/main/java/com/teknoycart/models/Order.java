@@ -236,11 +236,22 @@ public class Order {
         this.paymentProofUrl = paymentProofUrl;
     }
 
+    @Column(name = "is_preorder")
+    private boolean isPreorder = false;
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public boolean isPreorder() {
+        return isPreorder;
+    }
+
+    public void setPreorder(boolean preorder) {
+        isPreorder = preorder;
     }
 }

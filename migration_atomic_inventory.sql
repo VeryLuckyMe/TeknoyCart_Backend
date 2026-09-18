@@ -89,6 +89,45 @@ BEGIN
 END;
 $$;
 
+-- 2c. Cancel in-flight order as seller RPC
+-- Securely cancels an in-flight order directly from the seller inventory inspector.
+-- Bypasses PostgREST default-deny on orders table while strictly enforcing seller identity and order state.
+CREATE OR REPLACE FUNCTION cancel_order_as_seller(p_order_id UUID, p_reason TEXT DEFAULT 'Cancelled by seller')
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_order RECORD;
+    v_caller_id UUID := auth.uid();
+BEGIN
+    SELECT * INTO v_order
+    FROM public.orders
+    WHERE order_id = p_order_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Order not found');
+    END IF;
+
+    -- Security Guard: Caller must be the seller of this order (or backend service)
+    IF v_caller_id IS NOT NULL AND v_order.seller_id != v_caller_id THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Only the seller can cancel this order');
+    END IF;
+
+    -- State Guard: Order cannot be cancelled if handoff already occurred or already resolved
+    IF v_order.status IN ('HANDOFF_PENDING', 'COMPLETED', 'CANCELLED', 'DISPUTED', 'RETURN_REQUESTED', 'RETURN_APPROVED', 'RETURN_COMPLETED', 'REFUND_COMPLETED') THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Order cannot be cancelled from state: ' || v_order.status);
+    END IF;
+
+    UPDATE public.orders
+    SET status = 'CANCELLED'
+    WHERE order_id = p_order_id;
+
+    RETURN jsonb_build_object('success', true, 'order_id', p_order_id);
+END;
+$$;
+
+
 
 -- 3. Atomic reservation RPC with SELECT ... FOR UPDATE row-level locking
 -- Enforces security guards: authentication, active product, no self-purchasing, positive qty.
@@ -225,3 +264,8 @@ $$;
 -- Grant execution to authenticated users
 GRANT EXECUTE ON FUNCTION reserve_inventory_atomic(UUID, INT, BOOLEAN) TO authenticated;
 GRANT EXECUTE ON FUNCTION release_expired_reservations() TO authenticated;
+GRANT EXECUTE ON FUNCTION reconcile_inventory_holds(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION cancel_order_as_seller(UUID, TEXT) TO authenticated;
+
+-- 5. Explicit pre-order snapshot column on orders table
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS is_preorder BOOLEAN NOT NULL DEFAULT FALSE;
