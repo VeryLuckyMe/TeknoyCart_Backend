@@ -19,6 +19,11 @@ ALTER TABLE IF EXISTS public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.payment_proofs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.order_returns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.order_audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.product_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.schema_migrations ENABLE ROW LEVEL SECURITY;
+
+-- Revoke public access to internal backend migration tables from PostgREST
+REVOKE ALL ON TABLE public.schema_migrations FROM anon, authenticated;
 
 -- ------------------------------------------------------------------------------
 -- 2. Clean up existing policies for idempotency
@@ -396,3 +401,27 @@ CREATE POLICY "order_audit_logs_select_parties"
             AND (o.buyer_id = auth.uid() OR o.seller_id = auth.uid())
         )
     );
+
+-- ------------------------------------------------------------------------------
+-- 11. PRODUCT REVIEWS POLICIES
+-- ------------------------------------------------------------------------------
+CREATE POLICY "reviews_select_all"
+    ON public.product_reviews FOR SELECT
+    TO public
+    USING (true);
+
+CREATE POLICY "reviews_insert_buyer"
+    ON public.product_reviews FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = buyer_id);
+
+CREATE POLICY "reviews_update_party"
+    ON public.product_reviews FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = buyer_id OR auth.uid() = seller_id);
+
+CREATE POLICY "reviews_delete_buyer"
+    ON public.product_reviews FOR DELETE
+    TO authenticated
+    USING (auth.uid() = buyer_id);
+

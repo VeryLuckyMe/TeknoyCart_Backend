@@ -29,7 +29,9 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
                 "CREATE TABLE IF NOT EXISTS public.schema_migrations (" +
                 "    version VARCHAR(255) PRIMARY KEY," +
                 "    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP" +
-                ");"
+                ");" +
+                "ALTER TABLE public.schema_migrations ENABLE ROW LEVEL SECURITY;" +
+                "REVOKE ALL ON public.schema_migrations FROM anon, authenticated;"
             );
         } catch (Exception e) {
             logger.warn("Could not create schema_migrations table: {}", e.getMessage());
