@@ -20,3 +20,8 @@ src/main/resources/application-local*.yml
 *.key
 *.pem
 *.p12
+
+# Python artifacts
+__pycache__/
+*.pyc
+

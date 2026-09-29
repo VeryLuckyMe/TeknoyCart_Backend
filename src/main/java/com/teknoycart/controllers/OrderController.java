@@ -93,12 +93,6 @@ public class OrderController {
         return ResponseEntity.ok(orderService.approveReturn(id, actorId));
     }
 
-    @PostMapping("/{id}/schedule-return")
-    public ResponseEntity<Order> scheduleReturn(@PathVariable UUID id) {
-        UUID actorId = getAuthenticatedUserId();
-        return ResponseEntity.ok(orderService.approveReturn(id, actorId));
-    }
-
     @PostMapping("/{id}/decline-return")
     public ResponseEntity<Order> declineReturn(@PathVariable UUID id,
             @RequestBody(required = false) Map<String, String> payload) {
