@@ -162,10 +162,12 @@ public class AuthController {
     @Autowired
     private com.teknoycart.security.JwtTokenProvider tokenProvider;
 
-    @org.springframework.beans.factory.annotation.Value("${supabase.url:https://chmtvasbhkbrvydbajnd.supabase.co}")
+    // Supabase credentials MUST be set via environment variables or application.yml (CRIT-01)
+    // Do NOT embed production keys as annotation defaults — use SUPABASE_URL / SUPABASE_ANON_KEY env vars
+    @org.springframework.beans.factory.annotation.Value("${supabase.url:}")
     private String supabaseUrl;
 
-    @org.springframework.beans.factory.annotation.Value("${supabase.anon-key:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I}")
+    @org.springframework.beans.factory.annotation.Value("${supabase.anon-key:}")
     private String supabaseAnonKey;
 
     private volatile String lastSupabaseError = "none";
@@ -322,11 +324,12 @@ public class AuthController {
 
             userRepository.save(user);
             int remaining = 5 - attempts;
+            // Log the internal auth error server-side only — never expose to clients (CRIT-04)
+            logger.debug("Auth failure for {}: supabaseError={}", email, lastSupabaseError);
             java.util.Map<String, Object> err = new java.util.HashMap<>();
             err.put("type", "INVALID_CREDENTIALS");
             err.put("message", "Invalid email or password. " + remaining + " attempts remaining before lockout.");
             err.put("attemptsRemaining", remaining);
-            err.put("debugAuthError", lastSupabaseError);
             return ResponseEntity.badRequest().body(err);
         }
 
