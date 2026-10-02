@@ -174,7 +174,8 @@ public class JwtTokenProvider {
         }
 
         String kid = null;
-        // 1. Explicit pre-check on unverified header: strictly reject any alg != ES256
+        String alg = null;
+        // 1. Parse unverified header to determine algorithm and key ID
         try {
             String[] parts = token.split("\\.");
             if (parts.length != 3) {
@@ -182,31 +183,60 @@ public class JwtTokenProvider {
             }
             String headerJson = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
             JsonNode headerNode = objectMapper.readTree(headerJson);
-            String alg = headerNode.path("alg").asText();
-            if (!"ES256".equalsIgnoreCase(alg)) {
-                logger.warn("JWT rejected: 'alg' claim must be ES256, but got: '{}'", alg);
-                return false;
-            }
+            alg = headerNode.path("alg").asText();
             kid = headerNode.path("kid").asText(null);
         } catch (Exception e) {
             logger.warn("Failed to parse JWT header: {}", e.getMessage());
             return false;
         }
 
+        // 2. Dispatch to correct validation path based on algorithm (MED-11)
+        if ("HS256".equalsIgnoreCase(alg)) {
+            // Backend-issued JWT: validate with HMAC signing key
+            return validateHs256Token(token);
+        } else if ("ES256".equalsIgnoreCase(alg)) {
+            // Supabase-issued JWT: validate with EC public key
+            return validateEs256Token(token, kid);
+        } else {
+            logger.warn("JWT rejected: unsupported algorithm '{}'", alg);
+            return false;
+        }
+    }
+
+    private boolean validateHs256Token(String token) {
+        try {
+            Jws<Claims> jws = Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token);
+
+            if (!"HS256".equalsIgnoreCase(jws.getHeader().getAlgorithm())) {
+                logger.warn("HS256 JWS algorithm mismatch after verification: {}", jws.getHeader().getAlgorithm());
+                return false;
+            }
+            return true;
+        } catch (ExpiredJwtException e) {
+            logger.warn("Backend JWT has expired: {}", e.getMessage());
+        } catch (JwtException | IllegalArgumentException e) {
+            logger.warn("Backend JWT signature validation failed: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    private boolean validateEs256Token(String token, String kid) {
         PublicKey publicKey = getKeyForToken(kid);
         if (publicKey == null) {
             logger.error("No EC Public Key available to verify Supabase JWT");
             return false;
         }
 
-        // 2. Cryptographic signature and expiration check
         try {
             Jws<Claims> jws = Jwts.parserBuilder()
                     .setSigningKey(publicKey)
                     .build()
                     .parseClaimsJws(token);
 
-            // 3. Confirm verified algorithm from parsed JWS header
+            // Confirm verified algorithm from parsed JWS header
             if (!"ES256".equalsIgnoreCase(jws.getHeader().getAlgorithm())) {
                 logger.warn("Verified JWS algorithm mismatch: expected ES256 but got {}", jws.getHeader().getAlgorithm());
                 return false;
@@ -214,7 +244,7 @@ public class JwtTokenProvider {
 
             Claims claims = jws.getBody();
 
-            // 4. Verify expected issuer
+            // Verify expected issuer
             if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
                 logger.warn("JWT issuer mismatch: expected {} but got {}", expectedIssuer, claims.getIssuer());
                 return false;
