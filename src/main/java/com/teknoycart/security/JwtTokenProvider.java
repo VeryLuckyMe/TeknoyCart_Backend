@@ -66,17 +66,40 @@ public class JwtTokenProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public String generateToken(String email, String role) {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.teknoycart.repositories.UserRepository userRepository;
+
+    public String generateToken(UUID userId, String email, String role) {
         java.util.Date now = new java.util.Date();
         java.util.Date expiryDate = new java.util.Date(now.getTime() + jwtExpirationMs);
 
-        return Jwts.builder()
-                .setSubject(email)
+        JwtBuilder builder = Jwts.builder()
+                .claim("email", email)
                 .claim("role", role != null ? role : "BUYER")
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
-                .compact();
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256);
+
+        if (userId != null) {
+            builder.setSubject(userId.toString());
+            builder.claim("userId", userId.toString());
+        } else {
+            builder.setSubject(email);
+        }
+
+        return builder.compact();
+    }
+
+    public String generateToken(String email, String role) {
+        UUID userId = null;
+        if (userRepository != null && email != null) {
+            try {
+                userId = userRepository.findByEmail(email.toLowerCase().trim())
+                        .map(com.teknoycart.models.User::getUserId)
+                        .orElse(null);
+            } catch (Exception ignored) {}
+        }
+        return generateToken(userId, email, role);
     }
 
     @PostConstruct
@@ -259,26 +282,81 @@ public class JwtTokenProvider {
         return false;
     }
 
+    private String extractAlgFromTokenHeader(String token) {
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length == 3) {
+                String headerJson = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
+                JsonNode headerNode = objectMapper.readTree(headerJson);
+                return headerNode.path("alg").asText(null);
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private Claims parseVerifiedClaims(String token) {
+        String alg = extractAlgFromTokenHeader(token);
+        if ("HS256".equalsIgnoreCase(alg)) {
+            return Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } else if ("ES256".equalsIgnoreCase(alg)) {
+            String kid = extractKidFromTokenHeader(token);
+            PublicKey publicKey = getKeyForToken(kid);
+            if (publicKey == null) {
+                throw new JwtException("No matching EC public key found for kid: " + kid);
+            }
+            return Jwts.parserBuilder()
+                    .setSigningKey(publicKey)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } else {
+            throw new JwtException("Unsupported JWT algorithm: " + alg);
+        }
+    }
+
     public UUID getUserIdFromToken(String token) {
-        String kid = extractKidFromTokenHeader(token);
-        PublicKey publicKey = getKeyForToken(kid);
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(publicKey)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-        return UUID.fromString(claims.getSubject());
+        try {
+            Claims claims = parseVerifiedClaims(token);
+            String subject = claims.getSubject();
+            String userIdClaim = claims.get("userId", String.class);
+            String candidate = (userIdClaim != null && !userIdClaim.isBlank()) ? userIdClaim : subject;
+            if (candidate != null && !candidate.isBlank()) {
+                try {
+                    return UUID.fromString(candidate);
+                } catch (IllegalArgumentException e) {
+                    // If subject is an email address, resolve UUID from UserRepository
+                    if (userRepository != null && candidate.contains("@")) {
+                        return userRepository.findByEmail(candidate.toLowerCase().trim())
+                                .map(com.teknoycart.models.User::getUserId)
+                                .orElse(null);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not extract userId from token: {}", e.getMessage());
+        }
+        return null;
     }
 
     public String getEmailFromToken(String token) {
-        String kid = extractKidFromTokenHeader(token);
-        PublicKey publicKey = getKeyForToken(kid);
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(publicKey)
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-        return claims.get("email", String.class);
+        try {
+            Claims claims = parseVerifiedClaims(token);
+            String email = claims.get("email", String.class);
+            if (email != null && !email.isBlank()) {
+                return email;
+            }
+            String subject = claims.getSubject();
+            if (subject != null && subject.contains("@")) {
+                return subject;
+            }
+        } catch (Exception e) {
+            logger.warn("Could not extract email from token: {}", e.getMessage());
+        }
+        return null;
     }
 
     private String extractKidFromTokenHeader(String token) {

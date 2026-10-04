@@ -31,6 +31,12 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody User user) {
+        if (user == null || user.getEmail() == null || user.getEmail().trim().isEmpty()
+                || user.getPasswordHash() == null || user.getPasswordHash().trim().isEmpty()
+                || user.getFullName() == null || user.getFullName().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Error: Full name, institutional email, and password are mandatory.");
+        }
+
         String email = user.getEmail().toLowerCase().trim();
         if (!email.endsWith("@cit.edu")) {
             return ResponseEntity.badRequest()
@@ -41,7 +47,11 @@ public class AuthController {
             return ResponseEntity.badRequest().body("Error: Email is already in use!");
         }
 
-        if ("SELLER".equalsIgnoreCase(user.getRole())) {
+        // Restrict role: only BUYER or SELLER can be registered publicly. Never allow ADMIN.
+        String requestedRole = (user.getRole() != null && "SELLER".equalsIgnoreCase(user.getRole())) ? "SELLER" : "BUYER";
+        user.setRole(requestedRole);
+
+        if ("SELLER".equals(requestedRole)) {
             if (user.getStoreName() == null || user.getStoreName().trim().isEmpty()) {
                 return ResponseEntity.badRequest().body("Error: Store Name is mandatory for seller registration.");
             }
@@ -50,19 +60,25 @@ public class AuthController {
             }
         }
 
-        // Generate dynamic verification token with 5-minute expiration
-        String token = UUID.randomUUID().toString();
-        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(5);
-
+        // Force security reset: prevent mass assignment tampering
+        user.setUserId(null); // Ensure auto-generated ID
         user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
         user.setEmail(email);
         user.setVerified(false); // Force all accounts to verify email before logging in
+        user.setSellerVerified(false); // Strict Ponytail Audit: never verified at registration
+        user.setLocked(false);
+        user.setFailedAttempts(0);
+        user.setLockUntil(null);
+
+        // Generate dynamic verification token with 5-minute expiration
+        String token = UUID.randomUUID().toString();
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(5);
         user.setVerificationToken(token);
         user.setTokenExpiresAt(expiresAt);
 
         User savedUser = userRepository.save(user);
 
-        if ("SELLER".equalsIgnoreCase(savedUser.getRole())) {
+        if ("SELLER".equals(savedUser.getRole())) {
             String storeName = user.getStoreName() != null ? user.getStoreName().trim() : "";
             if (storeName.isEmpty()) {
                 storeName = savedUser.getFullName() != null ? savedUser.getFullName() + "'s Store" : "Store";
@@ -75,7 +91,7 @@ public class AuthController {
             storeRepository.save(store);
         }
 
-        // Send HTML verification email via Outlook SMTP
+        // Send HTML verification email via Brevo / SMTP
         emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), token);
 
         return ResponseEntity
@@ -85,6 +101,9 @@ public class AuthController {
     @PostMapping("/send-verification")
     public ResponseEntity<?> sendVerificationEmail(@RequestParam("email") String email,
             @RequestParam("fullName") String fullName) {
+        if (email == null || email.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Error: Email is required.");
+        }
         String trimmedEmail = email.toLowerCase().trim();
         Optional<User> userOpt = userRepository.findByEmail(trimmedEmail);
 
@@ -93,6 +112,15 @@ public class AuthController {
         }
 
         User user = userOpt.get();
+
+        // Rate limiting cooldown: block re-sending within 60 seconds
+        if (user.getTokenExpiresAt() != null && LocalDateTime.now().isBefore(user.getTokenExpiresAt().minusMinutes(4))) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                    "type", "RATE_LIMITED",
+                    "message", "Please wait at least 60 seconds before requesting a new verification email."
+            ));
+        }
+
         String token = UUID.randomUUID().toString();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(5);
         user.setVerificationToken(token);
@@ -136,11 +164,15 @@ public class AuthController {
         user.setTokenExpiresAt(null);
         userRepository.save(user);
 
+        String safeFullName = org.springframework.web.util.HtmlUtils.htmlEscape(
+                user.getFullName() != null ? user.getFullName() : "Student"
+        );
+
         return ResponseEntity.ok()
                 .body("<html><body style=\"font-family: Arial; text-align: center; margin-top: 100px;\">"
                         + "<div style=\"max-width: 500px; margin: 0 auto; padding: 30px; border: 1px solid #ddd; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);\">"
                         + "<h2 style=\"color: #B22222;\">Verification Successful!</h2>"
-                        + "<p style=\"color: #555;\">Thank you, <b>" + user.getFullName()
+                        + "<p style=\"color: #555;\">Thank you, <b>" + safeFullName
                         + "</b>. Your institutional email has been verified.</p>"
                         + "<p>You can now open the TeknoyCart mobile app and sign in with your credentials.</p>"
                         + "</div>"
@@ -342,7 +374,7 @@ public class AuthController {
         // Generate stateless JWT session token signed using HMAC SHA-256
         String token = null;
         try {
-            token = tokenProvider.generateToken(user.getEmail(), user.getRole());
+            token = tokenProvider.generateToken(user.getUserId(), user.getEmail(), user.getRole());
         } catch (Exception e) {
             logger.error("Error generating session JWT token: {}", e.getMessage(), e);
         }

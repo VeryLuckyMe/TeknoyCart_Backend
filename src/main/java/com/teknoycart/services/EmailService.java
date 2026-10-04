@@ -38,15 +38,13 @@ public class EmailService {
     public boolean sendVerificationEmailSync(String recipientEmail, String recipientName, String verificationToken) {
         String verifyUrl = "https://teknoycart-backend.onrender.com/api/auth/verify?token=" + verificationToken;
         log.info("=========================================================================");
-        log.info("VERIFICATION LINK GENERATED FOR {}:", recipientEmail);
-        log.info("{}", verifyUrl);
+        log.info("VERIFICATION DISPATCH TRIGGERED FOR {}: [TOKEN REDACTED]", recipientEmail);
         log.info("=========================================================================");
 
         if (brevoApiKey == null || brevoApiKey.trim().isEmpty() || "PLACEHOLDER".equalsIgnoreCase(brevoApiKey.trim())) {
             log.error("********************************************************************************");
             log.error("BREVO EMAIL DISPATCH FAILED: 'brevo.api.key' (BREVO_API_KEY) is not configured!");
-            log.error("Recipient: {} <{}>", recipientName, recipientEmail);
-            log.error("Verification URL: {}", verifyUrl);
+            log.error("Recipient: [REDACTED] <{}>", recipientEmail);
             log.error("Notice: Email dispatch was skipped to prevent blocking user registration.");
             log.error("Please ensure BREVO_API_KEY is configured in your application environment.");
             log.error("********************************************************************************");
@@ -54,6 +52,10 @@ public class EmailService {
         }
 
         try {
+            String safeRecipientName = org.springframework.web.util.HtmlUtils.htmlEscape(
+                    recipientName != null ? recipientName : "Student"
+            );
+
             // Premium HTML Email Template with CSS branding matching CIT-U
             String htmlContent = "<div style=\"font-family: 'Outfit', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #ECECEF; border-radius: 16px;\">"
                     + "  <div style=\"text-align: center; margin-bottom: 24px;\">"
@@ -61,7 +63,7 @@ public class EmailService {
                     + "    <p style=\"color: #FFC107; font-weight: bold; margin: 4px 0 0 0; letter-spacing: 1px;\">CEBU INSTITUTE OF TECHNOLOGY - UNIVERSITY</p>"
                     + "  </div>"
                     + "  <hr style=\"border: none; border-top: 1px solid #ECECEF; margin-bottom: 24px;\"/>"
-                    + "  <h3 style=\"color: #1A1A1E;\">Hello " + recipientName + ",</h3>"
+                    + "  <h3 style=\"color: #1A1A1E;\">Hello " + safeRecipientName + ",</h3>"
                     + "  <p style=\"color: #5A413D; font-size: 15px; line-height: 1.6;\">"
                     + "    Thank you for registering at TeknoyCart! To finalize your secure campus account and start browsing pre-loved textbooks, uniforms, and student deals, please verify your email address."
                     + "  </p>"

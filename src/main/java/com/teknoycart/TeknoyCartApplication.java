@@ -46,6 +46,7 @@ public class TeknoyCartApplication implements CommandLineRunner {
         try {
             jdbcTemplate.execute("INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT (id) DO NOTHING");
             jdbcTemplate.execute("INSERT INTO storage.buckets (id, name, public) VALUES ('chat-images', 'chat-images', true) ON CONFLICT (id) DO NOTHING");
+            jdbcTemplate.execute("INSERT INTO storage.buckets (id, name, public) VALUES ('seller-kyc-documents', 'seller-kyc-documents', false) ON CONFLICT (id) DO NOTHING");
             System.out.println("====== Supabase storage buckets initialized successfully! ======");
         } catch (Exception e) {
             System.err.println("Could not initialize storage buckets: " + e.getMessage());
@@ -56,21 +57,17 @@ public class TeknoyCartApplication implements CommandLineRunner {
             jdbcTemplate.execute(
                 "DO $$\n" +
                 "BEGIN\n" +
-                "    IF NOT EXISTS (\n" +
-                "        SELECT 1 FROM pg_policies \n" +
-                "        WHERE tablename = 'objects' AND schemaname = 'storage' AND policyname = 'Public Read Access'\n" +
-                "    ) THEN\n" +
-                "        CREATE POLICY \"Public Read Access\" ON storage.objects FOR SELECT USING (true);\n" +
-                "    END IF;\n" +
+                "    -- Scope public read access ONLY to public buckets (product-images, chat-images)\n" +
+                "    -- Sensitive KYC documents in seller-kyc-documents are strictly excluded\n" +
+                "    DROP POLICY IF EXISTS \"Public Read Access\" ON storage.objects;\n" +
+                "    CREATE POLICY \"Public Read Access\" ON storage.objects FOR SELECT USING (\n" +
+                "        bucket_id IN ('product-images', 'chat-images')\n" +
+                "    );\n" +
                 "    \n" +
-                "    IF NOT EXISTS (\n" +
-                "        SELECT 1 FROM pg_policies \n" +
-                "        WHERE tablename = 'objects' AND schemaname = 'storage' AND policyname = 'Authenticated Upload Access'\n" +
-                "    ) THEN\n" +
-                "        CREATE POLICY \"Authenticated Upload Access\" ON storage.objects FOR INSERT WITH CHECK (\n" +
-                "            bucket_id IN ('product-images', 'chat-images')\n" +
-                "        );\n" +
-                "    END IF;\n" +
+                "    DROP POLICY IF EXISTS \"Authenticated Upload Access\" ON storage.objects;\n" +
+                "    CREATE POLICY \"Authenticated Upload Access\" ON storage.objects FOR INSERT WITH CHECK (\n" +
+                "        bucket_id IN ('product-images', 'chat-images', 'seller-kyc-documents')\n" +
+                "    );\n" +
                 "END\n" +
                 "$$;"
             );
