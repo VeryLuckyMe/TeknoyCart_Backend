@@ -48,6 +48,12 @@ public class OrderOtpLockoutTest {
     @org.springframework.boot.test.mock.mockito.MockBean
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private PayMongoClient payMongoClient;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private PayoutService payoutService;
+
     private UUID orderId;
     private UUID sellerId;
     private UUID buyerId;

@@ -53,6 +53,15 @@ public class CorsSecurityTest {
     private com.teknoycart.repositories.OrderAuditLogRepository orderAuditLogRepository;
 
     @MockBean
+    private com.teknoycart.repositories.PaymentEventRepository paymentEventRepository;
+
+    @MockBean
+    private com.teknoycart.services.PayMongoClient payMongoClient;
+
+    @MockBean
+    private com.teknoycart.services.PayoutService payoutService;
+
+    @MockBean
     private com.teknoycart.services.EmailService emailService;
 
     @Test

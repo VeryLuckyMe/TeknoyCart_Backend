@@ -149,4 +149,33 @@ public class OrderController {
         String refundReference = payload != null ? payload.get("refund_reference") : null;
         return ResponseEntity.ok(orderService.confirmRefund(id, actorId, refundReference));
     }
+
+    /**
+     * Phase 5: Initiates a GCash checkout session for an ACCEPTED order.
+     * Returns the PayMongo-hosted checkout URL and session expiry.
+     *
+     * <p>If the order is already AWAITING_PAYMENT and the session is not expired,
+     * returns the existing URL without creating a new session (idempotent).
+     *
+     * <p>Request body (optional):
+     * <pre>{@code { "success_url": "...", "cancel_url": "..." }}</pre>
+     */
+    @PostMapping("/{id}/initiate-payment")
+    public ResponseEntity<Map<String, Object>> initiatePayment(
+            @PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
+        UUID actorId = getAuthenticatedUserId();
+        String successUrl = payload != null ? payload.getOrDefault("success_url",
+                "https://teknoycart.app/payment/success?order=" + id) : "https://teknoycart.app/payment/success?order=" + id;
+        String cancelUrl  = payload != null ? payload.getOrDefault("cancel_url",
+                "https://teknoycart.app/payment/cancel?order=" + id)  : "https://teknoycart.app/payment/cancel?order=" + id;
+
+        OrderService.InitiatePaymentResult result =
+                orderService.initiateGcashPayment(id, actorId, successUrl, cancelUrl);
+
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("checkout_url", result.checkoutUrl());
+        response.put("expires_at",   result.expiresAt().toString());
+        return ResponseEntity.ok(response);
+    }
 }

@@ -47,6 +47,12 @@ public class OrderLifecycleTest {
     @org.springframework.boot.test.mock.mockito.MockBean
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private PayMongoClient payMongoClient;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private PayoutService payoutService;
+
     private UUID buyerId;
     private UUID sellerId;
     private UUID adminId;

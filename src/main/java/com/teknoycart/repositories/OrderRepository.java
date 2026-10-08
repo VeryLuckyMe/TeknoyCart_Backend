@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,5 +15,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     @Query("SELECT o FROM Order o WHERE o.status = :status")
     List<Order> findByStatus(@Param("status") com.teknoycart.models.OrderStatus status);
+
+    /**
+     * Finds orders stuck in AWAITING_PAYMENT with an expired PayMongo checkout session.
+     * Used by the Phase 6 expiry sweep job. Filters at the DB level to avoid loading all
+     * AWAITING_PAYMENT rows into memory (C-5 fix).
+     */
+    @Query("SELECT o FROM Order o WHERE o.status = 'AWAITING_PAYMENT' AND o.paymentExpiresAt < :now")
+    List<Order> findExpiredAwaitingPayment(@Param("now") Instant now);
 }
 

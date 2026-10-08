@@ -58,3 +58,15 @@ supabase:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:https://teknoy-cart-web.vercel.app,http://localhost:*,http://127.0.0.1:*}
 
+# ── PayMongo GCash Payment Hold (Rev 2) ────────────────────────────────────────
+# Set PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET as environment variables.
+# Never commit real keys to git.
+paymongo:
+  secret-key: ${PAYMONGO_SECRET_KEY:sk_test_placeholder_replace_me}
+  webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:whsk_test_placeholder_replace_me}
+  base-url: ${PAYMONGO_BASE_URL:https://api.paymongo.com}
+  # Minutes until an AWAITING_PAYMENT checkout session expires and reverts to ACCEPTED.
+  checkout-ttl-minutes: ${PAYMONGO_CHECKOUT_TTL_MINUTES:30}
+  # Set to false in live mode (verifies 'li' signature field instead of 'te').
+  test-mode: ${PAYMONGO_TEST_MODE:true}
+

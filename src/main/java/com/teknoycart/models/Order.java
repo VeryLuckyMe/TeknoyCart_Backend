@@ -1,6 +1,7 @@
 package com.teknoycart.models;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -66,14 +67,73 @@ public class Order {
     @Column(name = "version")
     private Long version;
 
+    @Column(name = "payment_method")
+    private String paymentMethod;
+
+    @Column(name = "total_amount")
+    private BigDecimal totalAmount;
+
     @Column(name = "payment_reference")
     private String paymentReference;
 
     @Column(name = "payment_proof_url")
     private String paymentProofUrl;
 
+    // ── PayMongo GCash Payment Hold fields (Rev 2) ──────────────────────────────
+
+    /** PayMongo Checkout Session ID; non-null while AWAITING_PAYMENT / ESCROWED. */
+    @Column(name = "paymongo_checkout_session_id")
+    private String paymongoCheckoutSessionId;
+
+    /** Hosted checkout URL returned by PayMongo; cleared on expiry. */
+    @Column(name = "paymongo_checkout_url")
+    private String paymongoCheckoutUrl;
+
+    /** Absolute instant when the checkout session expires (set by checkout-ttl-minutes). */
+    @Column(name = "payment_expires_at")
+    private Instant paymentExpiresAt;
+
+    /**
+     * Order amount in Philippine centavos (e.g. PHP 100.50 = 10050).
+     * Stored as Long to avoid floating-point rounding bugs at the PayMongo boundary.
+     * Populated when checkout session is created; null for Cash on Pickup orders.
+     */
+    @Column(name = "amount_centavos")
+    private Long amountCentavos;
+
+    /**
+     * Guard flag set to true once PayoutService.release() has been called for this order.
+     * Prevents duplicate payout when both confirmReceipt() and processStaleHandoffs() can
+     * independently trigger COMPLETED (C-6 fix).
+     */
+    @Column(name = "payout_released", nullable = false)
+    private boolean payoutReleased = false;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    // ── PayMongo Getters / Setters ──────────────────────────────────────────────
+
+    public String getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public BigDecimal getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+
+    public String getPaymongoCheckoutSessionId() { return paymongoCheckoutSessionId; }
+    public void setPaymongoCheckoutSessionId(String id) { this.paymongoCheckoutSessionId = id; }
+
+    public String getPaymongoCheckoutUrl() { return paymongoCheckoutUrl; }
+    public void setPaymongoCheckoutUrl(String url) { this.paymongoCheckoutUrl = url; }
+
+    public Instant getPaymentExpiresAt() { return paymentExpiresAt; }
+    public void setPaymentExpiresAt(Instant paymentExpiresAt) { this.paymentExpiresAt = paymentExpiresAt; }
+
+    public Long getAmountCentavos() { return amountCentavos; }
+    public void setAmountCentavos(Long amountCentavos) { this.amountCentavos = amountCentavos; }
+
+    public boolean isPayoutReleased() { return payoutReleased; }
+    public void setPayoutReleased(boolean payoutReleased) { this.payoutReleased = payoutReleased; }
 
     // Getters and Setters
     public UUID getId() {

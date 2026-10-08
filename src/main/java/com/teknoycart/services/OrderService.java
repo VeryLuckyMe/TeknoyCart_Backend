@@ -3,23 +3,34 @@ package com.teknoycart.services;
 import com.teknoycart.models.Order;
 import com.teknoycart.models.OrderAuditLog;
 import com.teknoycart.models.OrderStatus;
+import com.teknoycart.models.PaymentEvent;
 import com.teknoycart.models.User;
 import com.teknoycart.repositories.OrderAuditLogRepository;
 import com.teknoycart.repositories.OrderRepository;
+import com.teknoycart.repositories.PaymentEventRepository;
 import com.teknoycart.repositories.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class OrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     /** OTP expires after 15 minutes */
     private static final Duration OTP_EXPIRY = Duration.ofMinutes(15);
@@ -32,17 +43,16 @@ public class OrderService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    @Autowired
-    private OrderRepository orderRepository;
+    @Value("${paymongo.checkout-ttl-minutes:30}")
+    private int checkoutTtlMinutes;
 
-    @Autowired
-    private OrderAuditLogRepository auditLogRepository;
-
-    @Autowired
-    private OrderOtpService orderOtpService;
-
-    @Autowired
-    private UserRepository userRepository;
+    @Autowired private OrderRepository orderRepository;
+    @Autowired private OrderAuditLogRepository auditLogRepository;
+    @Autowired private OrderOtpService orderOtpService;
+    @Autowired private UserRepository userRepository;
+    @Autowired private PaymentEventRepository paymentEventRepository;
+    @Autowired private PayMongoClient payMongoClient;
+    @Autowired private PayoutService payoutService;
 
     private void logAudit(Order order, UUID actorId, OrderStatus oldStatus, OrderStatus newStatus, String method) {
         OrderAuditLog log = new OrderAuditLog();
@@ -54,9 +64,16 @@ public class OrderService {
         auditLogRepository.save(log);
     }
 
+    /**
+     * Returns true if real money is associated with this order and unilateral cancellation
+     * would risk stranding funds.
+     * C-7 fix: now also covers ESCROWED (PayMongo-held funds) and any order with amount_centavos set.
+     */
     private boolean isOrderPaymentAttached(Order order) {
         return order.getStatus() == OrderStatus.PAYMENT_VERIFIED ||
                 order.getStatus() == OrderStatus.PAYMENT_SUBMITTED ||
+                order.getStatus() == OrderStatus.ESCROWED ||
+                order.getAmountCentavos() != null ||
                 (order.getPaymentReference() != null && !order.getPaymentReference().trim().isEmpty());
     }
 
@@ -103,9 +120,34 @@ public class OrderService {
                 order.getStatus() == OrderStatus.RETURN_REQUESTED ||
                 order.getStatus() == OrderStatus.RETURN_APPROVED ||
                 order.getStatus() == OrderStatus.RETURN_COMPLETED ||
-                order.getStatus() == OrderStatus.REFUND_COMPLETED) {
+                order.getStatus() == OrderStatus.REFUND_COMPLETED ||
+                order.getStatus() == OrderStatus.REFUND_PENDING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Order cannot be cancelled from state: " + order.getStatus());
+        }
+
+        // B-2 fix: ESCROWED = real money held by PayMongo. Route to REFUND_PENDING for admin action.
+        if (order.getStatus() == OrderStatus.ESCROWED) {
+            OrderStatus oldStatus = order.getStatus();
+            order.setStatus(OrderStatus.REFUND_PENDING);
+            order = orderRepository.save(order);
+            logAudit(order, actorId, oldStatus, OrderStatus.REFUND_PENDING,
+                    "CANCELLED_WHILE_ESCROWED - Admin must issue manual refund via PayMongo dashboard. Reason: " + reason.trim());
+            return order;
+        }
+
+        // B-2 fix: AWAITING_PAYMENT = checkout session exists. Buyer cancelled before paying.
+        // Revert to ACCEPTED and clear the checkout session fields.
+        if (order.getStatus() == OrderStatus.AWAITING_PAYMENT) {
+            OrderStatus oldStatus = order.getStatus();
+            order.setStatus(OrderStatus.ACCEPTED);
+            order.setPaymongoCheckoutSessionId(null);
+            order.setPaymongoCheckoutUrl(null);
+            order.setPaymentExpiresAt(null);
+            order = orderRepository.save(order);
+            logAudit(order, actorId, oldStatus, OrderStatus.ACCEPTED,
+                    "BUYER_CANCELLED_AWAITING_PAYMENT - Checkout session cleared. Reason: " + reason.trim());
+            return order;
         }
 
         // If payment was verified, hard-block unilateral cancellation
@@ -245,6 +287,10 @@ public class OrderService {
 
         order = orderRepository.save(order);
         logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL");
+
+        // C-6 fix: trigger payout after status commit if this was a GCash/ESCROWED order.
+        releasePayout(order);
+
         return order;
     }
 
@@ -571,4 +617,187 @@ public class OrderService {
         logAudit(order, actorId, oldStatus, order.getStatus(), "PAYMENT_VERIFIED");
         return order;
     }
+
+    // ── PayMongo GCash Payment Hold methods (Phase 5/6/7) ──────────────────────
+
+    /**
+     * Phase 5: Initiates a GCash checkout session for an ACCEPTED order.
+     *
+     * <p>If the order is already AWAITING_PAYMENT and not expired, returns the stored URL
+     * without creating a second session (no double-charge risk).
+     *
+     * @param orderId  order to initiate payment for
+     * @param actorId  must equal the order's buyerId
+     * @param successUrl URL PayMongo redirects buyer to after successful payment
+     * @param cancelUrl  URL PayMongo redirects buyer to if they cancel
+     * @return {@link InitiatePaymentResult} with the checkout URL and expiry
+     */
+    @Transactional
+    public InitiatePaymentResult initiateGcashPayment(UUID orderId, UUID actorId,
+                                                       String successUrl, String cancelUrl) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+
+        // Auth: only buyer can initiate payment.
+        if (!actorId.equals(order.getBuyerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only the buyer can initiate GCash payment");
+        }
+
+        // Gate: must be a GCash order.
+        if (!"GCASH".equalsIgnoreCase(order.getPaymentMethod())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This order's payment method is not GCash");
+        }
+
+        Instant now = Instant.now();
+
+        // If already AWAITING_PAYMENT and not expired, return existing URL (no second session).
+        if (order.getStatus() == OrderStatus.AWAITING_PAYMENT
+                && order.getPaymentExpiresAt() != null
+                && now.isBefore(order.getPaymentExpiresAt())) {
+            return new InitiatePaymentResult(order.getPaymongoCheckoutUrl(), order.getPaymentExpiresAt());
+        }
+
+        // Must be ACCEPTED to create a new session.
+        if (order.getStatus() != OrderStatus.ACCEPTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot initiate payment from state: " + order.getStatus());
+        }
+
+        // Server-side amount computation — never trust client-supplied amounts.
+        // total_amount is stored in the DB as a double (existing schema); convert to centavos as long.
+        // Using BigDecimal at the boundary prevents rounding drift (D2).
+        long amountCentavos = computeCentavos(orderId);
+
+        Instant expiresAt = now.plus(Duration.ofMinutes(checkoutTtlMinutes));
+
+        // Call PayMongo — if this throws, nothing is saved and order stays ACCEPTED.
+        PayMongoClient.CheckoutSessionResult session = payMongoClient.createGcashCheckoutSession(
+                amountCentavos,
+                orderId.toString(),
+                "TeknoyCart Order " + orderId,
+                successUrl,
+                cancelUrl,
+                expiresAt.getEpochSecond());
+
+        OrderStatus oldStatus = order.getStatus();
+        order.setStatus(OrderStatus.AWAITING_PAYMENT);
+        order.setPaymongoCheckoutSessionId(session.sessionId());
+        order.setPaymongoCheckoutUrl(session.checkoutUrl());
+        order.setPaymentExpiresAt(expiresAt);
+        order.setAmountCentavos(amountCentavos);
+        order = orderRepository.save(order);
+        logAudit(order, actorId, oldStatus, OrderStatus.AWAITING_PAYMENT,
+                "GCASH_CHECKOUT_INITIATED - Session: " + session.sessionId()
+                        + ", expires: " + expiresAt);
+
+        return new InitiatePaymentResult(session.checkoutUrl(), expiresAt);
+    }
+
+    /**
+     * Phase 4: Called by the webhook controller after signature + idempotency checks pass.
+     * Moves the order from AWAITING_PAYMENT to ESCROWED.
+     *
+     * <p>If already ESCROWED (duplicate webhook): no-op, returns quietly.
+     * If in any other state: flags for admin (money taken but order in wrong state).
+     *
+     * @param orderId   order UUID from webhook metadata
+     * @param sessionId PayMongo session ID from webhook; must match the one stored on the order
+     */
+    @Transactional
+    public void markEscrowed(UUID orderId, String sessionId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> {
+                    log.error("Webhook: order {} not found for session {}", orderId, sessionId);
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
+                });
+
+        if (order.getStatus() == OrderStatus.ESCROWED) {
+            // Duplicate webhook after we already processed it — idempotent no-op.
+            log.info("Webhook: order {} already ESCROWED; ignoring duplicate.", orderId);
+            return;
+        }
+
+        if (order.getStatus() == OrderStatus.AWAITING_PAYMENT) {
+            OrderStatus oldStatus = order.getStatus();
+            order.setStatus(OrderStatus.ESCROWED);
+            order = orderRepository.save(order);
+            logAudit(order, null, oldStatus, OrderStatus.ESCROWED,
+                    "PAYMONGO_WEBHOOK - payment confirmed, session " + sessionId);
+            log.info("Order {} moved to ESCROWED via webhook, session {}", orderId, sessionId);
+            // TODO: notify seller (email/push) — integrate with EmailService here.
+            return;
+        }
+
+        // Money arrived but order is in an unexpected state (expired, cancelled, etc.)
+        // Flag for admin manual refund via PayMongo dashboard.
+        log.error("PAYMENT_RECEIVED_IN_UNEXPECTED_STATE: order {} status={}, session={}",
+                orderId, order.getStatus(), sessionId);
+        logAudit(order, null, order.getStatus(), order.getStatus(),
+                "PAYMENT_RECEIVED_IN_UNEXPECTED_STATE - session " + sessionId
+                        + " - Admin must issue manual refund via PayMongo dashboard");
+    }
+
+    /**
+     * Phase 6: Scheduled expiry sweep.
+     * Moves AWAITING_PAYMENT orders with expired checkout sessions back to ACCEPTED.
+     * Runs every 5 minutes.
+     */
+    @Scheduled(fixedRate = 300_000)
+    @Transactional
+    public void expireAwaitingPayments() {
+        List<Order> expired = orderRepository.findExpiredAwaitingPayment(Instant.now());
+        for (Order order : expired) {
+            if (order.getStatus() != OrderStatus.AWAITING_PAYMENT) continue; // race guard
+            OrderStatus oldStatus = order.getStatus();
+            order.setStatus(OrderStatus.ACCEPTED);
+            order.setPaymongoCheckoutSessionId(null);
+            order.setPaymongoCheckoutUrl(null);
+            order.setPaymentExpiresAt(null);
+            orderRepository.save(order);
+            logAudit(order, null, oldStatus, OrderStatus.ACCEPTED,
+                    "PAYMENT_EXPIRED - checkout session expired, reverted to ACCEPTED");
+            log.info("Order {} payment expired; reverted to ACCEPTED", order.getId());
+        }
+    }
+
+    /**
+     * Phase 7: Triggers the payout after a GCash/ESCROWED order reaches COMPLETED.
+     * Guards on {@code payout_released} flag for idempotency (C-6 fix).
+     * Must be called AFTER the COMPLETED status is committed.
+     *
+     * @param order order in COMPLETED status
+     */
+    public void releasePayout(Order order) {
+        if (order.getAmountCentavos() == null) {
+            // Not a GCash order — no payout needed.
+            return;
+        }
+        if (order.isPayoutReleased()) {
+            log.info("Payout already released for order {}", order.getId());
+            return;
+        }
+        payoutService.release(order);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Queries the DB for the order's total_amount and converts to centavos using BigDecimal
+     * to avoid double-rounding drift (D2).
+     */
+    private long computeCentavos(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+        // Fallback: if amount_centavos already set (re-initiation path), reuse it.
+        if (order.getAmountCentavos() != null) return order.getAmountCentavos();
+        if (order.getTotalAmount() != null) {
+            return order.getTotalAmount().multiply(new java.math.BigDecimal(100)).longValueExact();
+        }
+        throw new IllegalStateException("Order " + orderId + " has neither amountCentavos nor totalAmount set");
+    }
+
+    /** Lightweight result object for the initiate-payment endpoint response. */
+    public record InitiatePaymentResult(String checkoutUrl, Instant expiresAt) {}
 }

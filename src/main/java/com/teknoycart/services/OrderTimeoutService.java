@@ -8,6 +8,7 @@ import com.teknoycart.repositories.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +46,13 @@ public class OrderTimeoutService {
 
     @Autowired(required = false)
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    /**
+     * C-6 fix: @Lazy to break circular dependency (OrderService -> OrderTimeoutService via @Scheduled).
+     * Used only in processStaleHandoffs() to trigger payout on auto-completed GCash orders.
+     */
+    @Autowired @Lazy
+    private OrderService orderService;
 
     /**
      * Sweeps expired reservations every 5 minutes (300,000 ms).
@@ -152,6 +160,14 @@ public class OrderTimeoutService {
                         "SYSTEM_AUTO_COMPLETE - Buyer did not dispute within 24h of handoff");
                 count++;
                 log.info("Order {} auto-completed (24h handoff inspection guarantee timeout)", order.getId());
+
+                // C-6 fix: trigger payout for GCash orders that auto-completed via scheduler.
+                // releasePayout() guards on payout_released flag so retries are no-ops.
+                try {
+                    orderService.releasePayout(order);
+                } catch (Exception e) {
+                    log.error("Auto-complete payout failed for order {}: {}", order.getId(), e.getMessage());
+                }
             }
         }
         return count;
