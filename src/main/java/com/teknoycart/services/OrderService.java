@@ -92,7 +92,7 @@ public class OrderService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Order cannot be accepted from state: " + order.getStatus());
         }
-        if (order.getSellerId() == null || !order.getSellerId().equals(actorId)) {
+        if (actorId == null || order.getSellerId() == null || !order.getSellerId().equals(actorId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the seller can accept this order");
         }
 
@@ -106,7 +106,7 @@ public class OrderService {
     @Transactional
     public Order cancelOrder(UUID orderId, UUID actorId, String reason) {
         Order order = getOrder(orderId);
-        if (!actorId.equals(order.getBuyerId()) && !actorId.equals(order.getSellerId())) {
+        if (actorId == null || (!actorId.equals(order.getBuyerId()) && !actorId.equals(order.getSellerId()))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the buyer or seller can cancel this order");
         }
         if (reason == null || reason.trim().isEmpty()) {

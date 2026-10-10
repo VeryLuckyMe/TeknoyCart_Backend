@@ -27,6 +27,17 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatusException(org.springframework.web.server.ResponseStatusException ex) {
+        logger.warn("ResponseStatusException: {} - {}", ex.getStatusCode(), ex.getReason());
+        return ResponseEntity.status(ex.getStatusCode()).body(Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", ex.getStatusCode().value(),
+                "error", ex.getStatusCode().toString(),
+                "message", ex.getReason() != null ? ex.getReason() : (ex.getMessage() != null ? ex.getMessage() : "Request error")
+        ));
+    }
+
     /**
      * Catch-all handler: prevents internal class names, stack traces, and
      * implementation details from leaking in production error responses.

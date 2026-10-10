@@ -26,15 +26,20 @@ public class OrderController {
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User is not authenticated");
         }
+        UUID userId = null;
         if (auth.getPrincipal() instanceof UserPrincipal) {
-            return ((UserPrincipal) auth.getPrincipal()).getId();
+            userId = ((UserPrincipal) auth.getPrincipal()).getId();
         }
-        String principal = auth.getName();
-        try {
-            return UUID.fromString(principal);
-        } catch (IllegalArgumentException e) {
+        if (userId == null) {
+            String principal = auth.getName();
+            try {
+                userId = UUID.fromString(principal);
+            } catch (IllegalArgumentException ignored) {}
+        }
+        if (userId == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid user identifier in security context");
         }
+        return userId;
     }
 
     @PostMapping("/{id}/accept")
