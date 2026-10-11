@@ -185,4 +185,15 @@ public class OrderController {
         response.put("expiresAt",    result.expiresAt().toString());
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * Active reconciliation: queries PayMongo directly to check if checkout session is paid.
+     * Transitions order to ESCROWED if payment is confirmed.
+     */
+    @PostMapping("/{id}/sync-payment")
+    public ResponseEntity<Order> syncPayment(@PathVariable UUID id) {
+        UUID actorId = getAuthenticatedUserId();
+        return ResponseEntity.ok(orderService.syncPaymongoPayment(id, actorId));
+    }
 }
+

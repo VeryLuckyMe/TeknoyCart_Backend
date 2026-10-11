@@ -764,6 +764,60 @@ public class OrderService {
     }
 
     /**
+     * Active payment status reconciliation with PayMongo API.
+     * Queries PayMongo directly to check if the session is paid.
+     * Provides a resilient fallback if webhooks are delayed, unconfigured, or firewalled.
+     */
+    @Transactional
+    public Order syncPaymongoPayment(UUID orderId, UUID actorId) {
+        Order order = getOrder(orderId);
+        if (actorId != null && !actorId.equals(order.getBuyerId()) && !actorId.equals(order.getSellerId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized to sync payment for this order");
+        }
+        if (order.getStatus() == OrderStatus.ESCROWED) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.AWAITING_PAYMENT) {
+            return order;
+        }
+        String sessionId = order.getPaymongoCheckoutSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return order;
+        }
+
+        try {
+            com.fasterxml.jackson.databind.JsonNode sessionAttrs = payMongoClient.getCheckoutSession(sessionId);
+            boolean isPaid = false;
+            com.fasterxml.jackson.databind.JsonNode payments = sessionAttrs.path("payments");
+            if (payments.isArray() && payments.size() > 0) {
+                for (com.fasterxml.jackson.databind.JsonNode payment : payments) {
+                    String pStatus = payment.path("attributes").path("status").asText("");
+                    if ("paid".equalsIgnoreCase(pStatus)) {
+                        isPaid = true;
+                        break;
+                    }
+                }
+                // If payments array has items, in PayMongo it represents successful captures
+                if (!isPaid && payments.size() > 0) {
+                    isPaid = true;
+                }
+            }
+            String sessionStatus = sessionAttrs.path("status").asText("");
+            if ("paid".equalsIgnoreCase(sessionStatus)) {
+                isPaid = true;
+            }
+
+            if (isPaid) {
+                markEscrowed(orderId, sessionId);
+                return getOrder(orderId);
+            }
+        } catch (Exception e) {
+            log.warn("Payment sync check notice for session {}: {}", sessionId, e.getMessage());
+        }
+        return order;
+    }
+
+    /**
      * Phase 6: Scheduled expiry sweep.
      * Moves AWAITING_PAYMENT orders with expired checkout sessions back to ACCEPTED.
      * Runs every 5 minutes.

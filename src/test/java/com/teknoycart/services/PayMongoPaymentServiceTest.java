@@ -247,4 +247,30 @@ public class PayMongoPaymentServiceTest {
         assertNull(reloaded.getPaymongoCheckoutUrl());
         assertNull(reloaded.getPaymentExpiresAt());
     }
+
+    @Test
+    @DisplayName("syncPaymongoPayment: Moves order to ESCROWED when PayMongo reports paid status")
+    void testSyncPaymongoPaymentSuccess() {
+        Order order = createOrder(OrderStatus.AWAITING_PAYMENT, "GCASH", new BigDecimal("150.00"));
+        order.setPaymongoCheckoutSessionId("cs_sync_test");
+        order = orderRepository.save(order);
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode mockSessionAttrs = mapper.createObjectNode();
+        com.fasterxml.jackson.databind.node.ArrayNode payments = mockSessionAttrs.putArray("payments");
+        com.fasterxml.jackson.databind.node.ObjectNode payment = payments.addObject();
+        payment.put("id", "pay_test_123");
+        payment.putObject("attributes").put("status", "paid");
+
+        when(payMongoClient.getCheckoutSession("cs_sync_test")).thenReturn(mockSessionAttrs);
+
+        Order synced = orderService.syncPaymongoPayment(order.getId(), buyerId);
+
+        assertNotNull(synced);
+        assertEquals(OrderStatus.ESCROWED, synced.getStatus());
+
+        Order reloaded = orderRepository.findById(order.getId()).orElseThrow();
+        assertEquals(OrderStatus.ESCROWED, reloaded.getStatus());
+    }
 }
+
