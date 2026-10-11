@@ -59,9 +59,14 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/schedule")
-    public ResponseEntity<Order> scheduleMeetup(@PathVariable UUID id) {
+    public ResponseEntity<Order> scheduleMeetup(
+            @PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload) {
         UUID actorId = getAuthenticatedUserId();
-        return ResponseEntity.ok(orderService.scheduleMeetup(id, actorId));
+        String pickupDay = payload != null ? payload.get("pickup_day") : null;
+        String pickupTime = payload != null ? payload.get("pickup_time") : null;
+        String pickupLocation = payload != null ? payload.get("pickup_location") : null;
+        return ResponseEntity.ok(orderService.scheduleMeetup(id, actorId, pickupDay, pickupTime, pickupLocation));
     }
 
     @PostMapping("/{id}/verify-handoff")
@@ -172,10 +177,10 @@ public class OrderController {
             @PathVariable UUID id,
             @RequestBody(required = false) Map<String, String> payload) {
         UUID actorId = getAuthenticatedUserId();
-        String successUrl = payload != null ? payload.getOrDefault("success_url",
-                "https://teknoycart.app/payment/success?order=" + id) : "https://teknoycart.app/payment/success?order=" + id;
-        String cancelUrl  = payload != null ? payload.getOrDefault("cancel_url",
-                "https://teknoycart.app/payment/cancel?order=" + id)  : "https://teknoycart.app/payment/cancel?order=" + id;
+        String successUrl = payload != null && payload.containsKey("success_url") ? payload.get("success_url") :
+                "https://teknoycart-backend.onrender.com/api/payments/success?order=" + id;
+        String cancelUrl  = payload != null && payload.containsKey("cancel_url") ? payload.get("cancel_url") :
+                "https://teknoycart-backend.onrender.com/api/payments/cancel?order=" + id;
 
         OrderService.InitiatePaymentResult result =
                 orderService.initiateGcashPayment(id, actorId, successUrl, cancelUrl);

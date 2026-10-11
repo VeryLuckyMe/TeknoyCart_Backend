@@ -79,7 +79,10 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
                 "ADD COLUMN IF NOT EXISTS paymongo_checkout_url TEXT, " +
                 "ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ, " +
                 "ADD COLUMN IF NOT EXISTS amount_centavos BIGINT, " +
-                "ADD COLUMN IF NOT EXISTS payout_released BOOLEAN NOT NULL DEFAULT false;"
+                "ADD COLUMN IF NOT EXISTS payout_released BOOLEAN NOT NULL DEFAULT false, " +
+                "ADD COLUMN IF NOT EXISTS pickup_location VARCHAR(255), " +
+                "ADD COLUMN IF NOT EXISTS pickup_day VARCHAR(50), " +
+                "ADD COLUMN IF NOT EXISTS pickup_time VARCHAR(50);"
             );
             // 5. Ensure version column has DEFAULT 0
             jdbcTemplate.execute(

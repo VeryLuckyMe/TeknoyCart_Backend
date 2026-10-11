@@ -80,6 +80,15 @@ public class Order {
     @Column(name = "payment_proof_url")
     private String paymentProofUrl;
 
+    @Column(name = "pickup_location")
+    private String pickupLocation;
+
+    @Column(name = "pickup_day")
+    private String pickupDay;
+
+    @Column(name = "pickup_time")
+    private String pickupTime;
+
     // ── PayMongo GCash Payment Hold fields (Rev 2) ──────────────────────────────
 
     /** PayMongo Checkout Session ID; non-null while AWAITING_PAYMENT / ESCROWED. */
@@ -297,8 +306,29 @@ public class Order {
         this.paymentProofUrl = paymentProofUrl;
     }
 
-    @Column(name = "is_preorder")
-    private boolean isPreorder = false;
+    public String getPickupLocation() {
+        return pickupLocation;
+    }
+
+    public void setPickupLocation(String pickupLocation) {
+        this.pickupLocation = pickupLocation;
+    }
+
+    public String getPickupDay() {
+        return pickupDay;
+    }
+
+    public void setPickupDay(String pickupDay) {
+        this.pickupDay = pickupDay;
+    }
+
+    public String getPickupTime() {
+        return pickupTime;
+    }
+
+    public void setPickupTime(String pickupTime) {
+        this.pickupTime = pickupTime;
+    }
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
@@ -307,6 +337,9 @@ public class Order {
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
     }
+
+    @Column(name = "is_preorder")
+    private boolean isPreorder = false;
 
     public boolean isPreorder() {
         return isPreorder;

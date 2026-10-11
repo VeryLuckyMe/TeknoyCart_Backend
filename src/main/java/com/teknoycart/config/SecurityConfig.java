@@ -45,9 +45,9 @@ public class SecurityConfig {
                 .requestMatchers("/auth/request-seller-upgrade").authenticated()
                 // Allow public access to authentication, error, and potential future developer APIs
                 .requestMatchers("/auth/**", "/error", "/stores/**").permitAll()
-                // PayMongo webhook: unauthenticated; security is via Paymongo-Signature header (C-2 fix)
-                // Full public URL is /api/webhooks/paymongo (context-path /api prepended by server config)
-                .requestMatchers("/webhooks/**").permitAll()
+                // PayMongo webhook & payment return redirects: unauthenticated
+                // Full public URL is /api/webhooks/** and /api/payments/** (context-path /api prepended by server config)
+                .requestMatchers("/webhooks/**", "/payments/**").permitAll()
                 .requestMatchers("/orders/**").authenticated()
                 // DEVELOPER TIP: If you add new business REST controllers (e.g., /api/products)
                 // in the future, you must either:

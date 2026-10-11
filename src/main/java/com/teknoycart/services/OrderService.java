@@ -210,6 +210,11 @@ public class OrderService {
 
     @Transactional
     public Order scheduleMeetup(UUID orderId, UUID actorId) {
+        return scheduleMeetup(orderId, actorId, null, null, null);
+    }
+
+    @Transactional
+    public Order scheduleMeetup(UUID orderId, UUID actorId, String pickupDay, String pickupTime, String pickupLocation) {
         Order order = getOrder(orderId);
         if (!actorId.equals(order.getBuyerId()) && !actorId.equals(order.getSellerId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
@@ -228,6 +233,16 @@ public class OrderService {
 
         OrderStatus oldStatus = order.getStatus();
         order.setStatus(OrderStatus.MEETUP_SCHEDULED);
+
+        if (pickupDay != null && !pickupDay.trim().isEmpty()) {
+            order.setPickupDay(pickupDay.trim());
+        }
+        if (pickupTime != null && !pickupTime.trim().isEmpty()) {
+            order.setPickupTime(pickupTime.trim());
+        }
+        if (pickupLocation != null && !pickupLocation.trim().isEmpty()) {
+            order.setPickupLocation(pickupLocation.trim());
+        }
 
         // Generate cryptographically secure 6-digit OTP
         int otp = 100000 + SECURE_RANDOM.nextInt(900000);

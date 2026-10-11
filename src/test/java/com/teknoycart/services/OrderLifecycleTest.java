@@ -170,6 +170,25 @@ public class OrderLifecycleTest {
     }
 
     @Test
+    @DisplayName("Meetup Reschedule Flow: Updates pickup day, time window, and location")
+    void testScheduleMeetupWithCustomDayTimeAndLocation() {
+        Order order = createOrder(OrderStatus.ACCEPTED);
+        order.setPickupDay("Today");
+        order.setPickupTime("12:00 PM - 01:30 PM");
+        order.setPickupLocation("Library Lobby");
+        order = orderRepository.saveAndFlush(order);
+
+        // Seller reschedules to Tomorrow, 03:00 PM - 04:30 PM at CIT-U Main Gate
+        order = orderService.scheduleMeetup(order.getId(), sellerId, "Tomorrow", "03:00 PM - 04:30 PM", "CIT-U Main Gate");
+
+        assertEquals(OrderStatus.MEETUP_SCHEDULED, order.getStatus());
+        assertEquals("Tomorrow", order.getPickupDay());
+        assertEquals("03:00 PM - 04:30 PM", order.getPickupTime());
+        assertEquals("CIT-U Main Gate", order.getPickupLocation());
+        assertNotNull(order.getHandoffOtp());
+    }
+
+    @Test
     @DisplayName("No-Show: COM cancels cleanly, GCash routes to DISPUTED")
     void testNoShowHandling() {
         // 1. COM order
