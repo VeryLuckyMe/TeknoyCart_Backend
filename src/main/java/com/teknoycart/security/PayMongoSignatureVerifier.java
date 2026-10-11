@@ -57,6 +57,10 @@ public class PayMongoSignatureVerifier {
             throw new PayMongoSignatureException("Missing Paymongo-Signature header");
         }
 
+        if (webhookSecret == null || webhookSecret.isBlank()) {
+            throw new PayMongoSignatureException("PAYMONGO_WEBHOOK_SECRET is not configured");
+        }
+
         // ── 1. Parse the header ───────────────────────────────────────────────
         String timestamp = null;
         String testSig   = null;

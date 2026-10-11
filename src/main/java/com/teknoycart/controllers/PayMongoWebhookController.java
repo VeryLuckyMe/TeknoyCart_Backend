@@ -64,11 +64,7 @@ public class PayMongoWebhookController {
 
         // ── 1. Signature verification ─────────────────────────────────────────
         try {
-            if ((webhookSecret == null || webhookSecret.isBlank()) && testMode) {
-                log.warn("PAYMONGO_WEBHOOK_SECRET is not configured. Allowing sandbox webhook in testMode.");
-            } else {
-                signatureVerifier.verify(sigHeader, rawBody, webhookSecret, testMode);
-            }
+            signatureVerifier.verify(sigHeader, rawBody, webhookSecret, testMode);
         } catch (PayMongoSignatureException ex) {
             log.warn("PayMongo webhook rejected: {}", ex.getMessage());
             return ResponseEntity.status(403).body("Invalid signature");
