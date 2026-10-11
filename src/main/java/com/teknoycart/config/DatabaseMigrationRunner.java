@@ -19,6 +19,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String RLS_MIGRATION_VERSION = "V2__comprehensive_rls_lockdown";
     private static final String LIFECYCLE_MIGRATION_VERSION = "V3__order_lifecycle_and_verification";
     private static final String ACCEPT_ORDER_FIX_VERSION = "V4__accept_order_fix_and_paymongo";
+    private static final String STATUS_RESILIENCE_VERSION = "V5__order_status_and_audit_resilience";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -38,15 +39,68 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             logger.warn("Could not create schema_migrations table: {}", e.getMessage());
         }
 
+        // Direct DDL safety fixes executed on every boot:
         try {
-            jdbcTemplate.execute("ALTER TABLE orders ALTER COLUMN status TYPE VARCHAR USING status::TEXT;");
+            // 1. Ensure status column on orders is VARCHAR, not bound by legacy DEFAULT or enum
+            jdbcTemplate.execute(
+                "DO $$ " +
+                "BEGIN " +
+                "    ALTER TABLE public.orders ALTER COLUMN status DROP DEFAULT; " +
+                "    ALTER TABLE public.orders ALTER COLUMN status TYPE VARCHAR(50) USING status::TEXT; " +
+                "    ALTER TABLE public.orders ALTER COLUMN status SET DEFAULT 'PLACED'; " +
+                "EXCEPTION WHEN OTHERS THEN " +
+                "    NULL; " +
+                "END $$;"
+            );
+            // 2. Drop any legacy check constraints on status
+            jdbcTemplate.execute(
+                "DO $$ " +
+                "DECLARE r RECORD; " +
+                "BEGIN " +
+                "    FOR r IN ( " +
+                "        SELECT conname FROM pg_constraint " +
+                "        WHERE conrelid = 'public.orders'::regclass AND contype = 'c' " +
+                "          AND pg_get_constraintdef(oid) LIKE '%status%' " +
+                "    ) LOOP " +
+                "        EXECUTE 'ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname); " +
+                "    END LOOP; " +
+                "END $$;"
+            );
+            // 3. Drop foreign key constraint on actor_id in order_audit_logs if present
+            jdbcTemplate.execute("ALTER TABLE public.order_audit_logs DROP CONSTRAINT IF EXISTS order_audit_logs_actor_id_fkey;");
+            // 4. Ensure PayMongo GCash checkout columns exist
+            jdbcTemplate.execute(
+                "ALTER TABLE public.orders " +
+                "ADD COLUMN IF NOT EXISTS payment_method TEXT, " +
+                "ADD COLUMN IF NOT EXISTS paymongo_checkout_session_id TEXT, " +
+                "ADD COLUMN IF NOT EXISTS paymongo_checkout_url TEXT, " +
+                "ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ, " +
+                "ADD COLUMN IF NOT EXISTS amount_centavos BIGINT, " +
+                "ADD COLUMN IF NOT EXISTS payout_released BOOLEAN NOT NULL DEFAULT false;"
+            );
+            // 5. Ensure version column has DEFAULT 0
+            jdbcTemplate.execute(
+                "DO $$ " +
+                "BEGIN " +
+                "    IF EXISTS ( " +
+                "        SELECT 1 FROM information_schema.columns " +
+                "        WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'version' " +
+                "    ) THEN " +
+                "        ALTER TABLE public.orders ALTER COLUMN version SET DEFAULT 0; " +
+                "        UPDATE public.orders SET version = 0 WHERE version IS NULL; " +
+                "    ELSE " +
+                "        ALTER TABLE public.orders ADD COLUMN version BIGINT DEFAULT 0; " +
+                "    END IF; " +
+                "END $$;"
+            );
         } catch (Exception e) {
-            // No-op if already converted
+            logger.warn("Pre-boot database schema resilience fix: {}", e.getMessage());
         }
 
         applyRlsMigration();
         applyLifecycleMigration();
         applyAcceptOrderFixMigration();
+        applyStatusResilienceMigration();
     }
 
     private void applyRlsMigration() {
@@ -141,5 +195,37 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             logger.error("Failed to apply Accept Order Fix migration: {}", e.getMessage(), e);
         }
     }
+
+    private void applyStatusResilienceMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                STATUS_RESILIENCE_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Order status resilience migration [{}] is already applied. Skipping DDL on boot.", STATUS_RESILIENCE_VERSION);
+                return;
+            }
+
+            logger.info("Applying Order Status & Audit Resilience migration [{}]...", STATUS_RESILIENCE_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_order_status_resilience.sql");
+            if (resource.exists()) {
+                String resilienceSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(resilienceSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    STATUS_RESILIENCE_VERSION
+                );
+                logger.info("Successfully applied Order Status & Audit Resilience migration to database.");
+            } else {
+                logger.warn("Resilience migration script not found in classpath: db/migration_order_status_resilience.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply Order Status Resilience migration: {}", e.getMessage(), e);
+        }
+    }
 }
+
 

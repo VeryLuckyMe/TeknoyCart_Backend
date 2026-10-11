@@ -3,8 +3,7 @@
 -- Platform: Supabase / PostgreSQL
 -- ====================================================================
 
--- 1. Convert payment_method from custom ENUM to VARCHAR if it is USER-DEFINED
--- Prevents PSQLException when Hibernate/PostgreSQL prepared statements bind VARCHAR
+-- 1. Convert payment_method and status from custom ENUM to VARCHAR
 DO $$
 BEGIN
     IF EXISTS (
@@ -14,7 +13,33 @@ BEGIN
     ) THEN
         ALTER TABLE public.orders ALTER COLUMN payment_method TYPE VARCHAR USING payment_method::TEXT;
     END IF;
+
+    -- Drop default on status if present and convert to VARCHAR
+    ALTER TABLE public.orders ALTER COLUMN status DROP DEFAULT;
+    ALTER TABLE public.orders ALTER COLUMN status TYPE VARCHAR(50) USING status::TEXT;
+    ALTER TABLE public.orders ALTER COLUMN status SET DEFAULT 'PLACED';
+EXCEPTION WHEN OTHERS THEN
+    NULL;
 END $$;
+
+-- 1b. Drop any legacy check constraints on status
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (
+        SELECT conname 
+        FROM pg_constraint 
+        WHERE conrelid = 'public.orders'::regclass 
+          AND contype = 'c' 
+          AND pg_get_constraintdef(oid) LIKE '%status%'
+    ) LOOP
+        EXECUTE 'ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+    END LOOP;
+END $$;
+
+-- 1c. Drop foreign key constraint on order_audit_logs.actor_id so Supabase auth users can be logged
+ALTER TABLE public.order_audit_logs DROP CONSTRAINT IF EXISTS order_audit_logs_actor_id_fkey;
 
 -- 2. Ensure orders.version has DEFAULT 0 and backfill any NULL rows
 DO $$

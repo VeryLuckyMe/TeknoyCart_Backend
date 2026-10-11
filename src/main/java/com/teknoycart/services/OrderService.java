@@ -55,13 +55,22 @@ public class OrderService {
     @Autowired private PayoutService payoutService;
 
     private void logAudit(Order order, UUID actorId, OrderStatus oldStatus, OrderStatus newStatus, String method) {
-        OrderAuditLog log = new OrderAuditLog();
-        log.setOrderId(order.getId());
-        log.setActorId(actorId);
-        log.setPreviousStatus(oldStatus != null ? oldStatus.name() : null);
-        log.setNewStatus(newStatus != null ? newStatus.name() : null);
-        log.setMethod(method);
-        auditLogRepository.save(log);
+        try {
+            OrderAuditLog auditLog = new OrderAuditLog();
+            auditLog.setId(UUID.randomUUID());
+            auditLog.setOrderId(order.getId());
+            if (actorId != null && userRepository.existsById(actorId)) {
+                auditLog.setActorId(actorId);
+            } else {
+                auditLog.setActorId(null);
+            }
+            auditLog.setPreviousStatus(oldStatus != null ? oldStatus.name() : null);
+            auditLog.setNewStatus(newStatus != null ? newStatus.name() : null);
+            auditLog.setMethod(method);
+            auditLogRepository.save(auditLog);
+        } catch (Exception e) {
+            log.warn("Non-fatal: failed to record audit log for order {}: {}", order.getId(), e.getMessage());
+        }
     }
 
     /**
@@ -694,7 +703,7 @@ public class OrderService {
         if (order.getVersion() == null) {
             order.setVersion(0L);
         }
-        order = orderRepository.save(order);
+        order = orderRepository.saveAndFlush(order);
         logAudit(order, actorId, oldStatus, OrderStatus.AWAITING_PAYMENT,
                 "GCASH_CHECKOUT_INITIATED - Session: " + session.sessionId()
                         + ", expires: " + expiresAt);
