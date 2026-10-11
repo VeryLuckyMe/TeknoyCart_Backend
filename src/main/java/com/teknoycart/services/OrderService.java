@@ -32,8 +32,8 @@ public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
-    /** OTP expires after 15 minutes */
-    private static final Duration OTP_EXPIRY = Duration.ofMinutes(15);
+    /** OTP expires after 48 hours to support Today, Tomorrow, and Next Business Day campus meetups */
+    private static final Duration OTP_EXPIRY = Duration.ofHours(48);
 
     /** Lock out after 5 consecutive failed OTP attempts */
     private static final int MAX_OTP_ATTEMPTS = 5;
