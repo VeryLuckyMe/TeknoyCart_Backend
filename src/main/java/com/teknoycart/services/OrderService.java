@@ -217,6 +217,7 @@ public class OrderService {
         }
         if (order.getStatus() != OrderStatus.ACCEPTED &&
                 order.getStatus() != OrderStatus.PAYMENT_VERIFIED &&
+                order.getStatus() != OrderStatus.ESCROWED &&
                 order.getStatus() != OrderStatus.MEETUP_SCHEDULED &&
                 order.getStatus() != OrderStatus.NEEDS_REVIEW &&
                 order.getStatus() != OrderStatus.APPROVED &&

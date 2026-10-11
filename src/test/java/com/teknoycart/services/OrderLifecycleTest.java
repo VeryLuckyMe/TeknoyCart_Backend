@@ -145,6 +145,31 @@ public class OrderLifecycleTest {
     }
 
     @Test
+    @DisplayName("ESCROWED GCash Flow: Schedule Meetup -> Handoff OTP -> Confirm Receipt -> Completed")
+    void testCompleteEscrowedOrderFlow() {
+        Order order = createOrder(OrderStatus.ESCROWED);
+        order.setAmountCentavos(15000L);
+        order = orderRepository.saveAndFlush(order);
+
+        // Schedule meetup from ESCROWED state
+        order = orderService.scheduleMeetup(order.getId(), sellerId);
+        assertEquals(OrderStatus.MEETUP_SCHEDULED, order.getStatus());
+        assertNotNull(order.getHandoffOtp());
+
+        String otp = order.getHandoffOtp();
+
+        // Verify handoff
+        order = orderService.verifyHandoff(order.getId(), sellerId, otp);
+        assertEquals(OrderStatus.HANDOFF_PENDING, order.getStatus());
+        assertTrue(order.isSellerHandedOff());
+
+        // Confirm receipt
+        order = orderService.confirmReceipt(order.getId(), buyerId);
+        assertEquals(OrderStatus.COMPLETED, order.getStatus());
+        assertTrue(order.isBuyerConfirmedReceipt());
+    }
+
+    @Test
     @DisplayName("No-Show: COM cancels cleanly, GCash routes to DISPUTED")
     void testNoShowHandling() {
         // 1. COM order
