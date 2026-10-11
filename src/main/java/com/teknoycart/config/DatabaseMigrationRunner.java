@@ -66,8 +66,11 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
                 "    END LOOP; " +
                 "END $$;"
             );
-            // 3. Drop foreign key constraint on actor_id in order_audit_logs if present
+            // 3. Drop foreign key constraint on actor_id in order_audit_logs and widen method to TEXT
             jdbcTemplate.execute("ALTER TABLE public.order_audit_logs DROP CONSTRAINT IF EXISTS order_audit_logs_actor_id_fkey;");
+            jdbcTemplate.execute("ALTER TABLE public.order_audit_logs ALTER COLUMN method TYPE TEXT;");
+            jdbcTemplate.execute("ALTER TABLE public.order_audit_logs ALTER COLUMN previous_status TYPE VARCHAR(100);");
+            jdbcTemplate.execute("ALTER TABLE public.order_audit_logs ALTER COLUMN new_status TYPE VARCHAR(100);");
             // 4. Ensure PayMongo GCash checkout columns exist
             jdbcTemplate.execute(
                 "ALTER TABLE public.orders " +

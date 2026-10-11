@@ -38,8 +38,11 @@ BEGIN
     END LOOP;
 END $$;
 
--- 1c. Drop foreign key constraint on order_audit_logs.actor_id so Supabase auth users can be logged
+-- 1c. Drop foreign key constraint on order_audit_logs.actor_id and widen method to TEXT
 ALTER TABLE public.order_audit_logs DROP CONSTRAINT IF EXISTS order_audit_logs_actor_id_fkey;
+ALTER TABLE public.order_audit_logs ALTER COLUMN method TYPE TEXT;
+ALTER TABLE public.order_audit_logs ALTER COLUMN previous_status TYPE VARCHAR(100);
+ALTER TABLE public.order_audit_logs ALTER COLUMN new_status TYPE VARCHAR(100);
 
 -- 2. Ensure orders.version has DEFAULT 0 and backfill any NULL rows
 DO $$

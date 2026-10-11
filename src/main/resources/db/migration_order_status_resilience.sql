@@ -51,9 +51,12 @@ BEGIN
     END IF;
 END $$;
 
--- 4. Drop actor_id foreign key constraint on order_audit_logs if present
+-- 4. Drop actor_id foreign key constraint and widen method/status columns on order_audit_logs
 -- (Allows actor_id to log Supabase Auth user IDs without requiring a row in public.users)
 ALTER TABLE public.order_audit_logs DROP CONSTRAINT IF EXISTS order_audit_logs_actor_id_fkey;
+ALTER TABLE public.order_audit_logs ALTER COLUMN method TYPE TEXT;
+ALTER TABLE public.order_audit_logs ALTER COLUMN previous_status TYPE VARCHAR(100);
+ALTER TABLE public.order_audit_logs ALTER COLUMN new_status TYPE VARCHAR(100);
 
 -- 5. Ensure PayMongo GCash checkout columns exist
 ALTER TABLE public.orders

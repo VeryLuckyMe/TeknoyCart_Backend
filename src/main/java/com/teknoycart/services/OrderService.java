@@ -66,8 +66,17 @@ public class OrderService {
             }
             auditLog.setPreviousStatus(oldStatus != null ? oldStatus.name() : null);
             auditLog.setNewStatus(newStatus != null ? newStatus.name() : null);
-            auditLog.setMethod(method);
-            auditLogRepository.save(auditLog);
+
+            // Guard against legacy VARCHAR(50) columns in PostgreSQL
+            String safeMethod = method;
+            if (safeMethod != null && safeMethod.length() > 50) {
+                safeMethod = safeMethod.substring(0, 50);
+            }
+            auditLog.setMethod(safeMethod != null ? safeMethod : "UNKNOWN");
+
+            // saveAndFlush ensures any DDL/DB failure is caught immediately in this catch block
+            // and never causes the surrounding transaction to fail or roll back
+            auditLogRepository.saveAndFlush(auditLog);
         } catch (Exception e) {
             log.warn("Non-fatal: failed to record audit log for order {}: {}", order.getId(), e.getMessage());
         }
@@ -705,8 +714,7 @@ public class OrderService {
         }
         order = orderRepository.saveAndFlush(order);
         logAudit(order, actorId, oldStatus, OrderStatus.AWAITING_PAYMENT,
-                "GCASH_CHECKOUT_INITIATED - Session: " + session.sessionId()
-                        + ", expires: " + expiresAt);
+                "GCASH_CHECKOUT_INITIATED");
 
         return new InitiatePaymentResult(session.checkoutUrl(), expiresAt);
     }
