@@ -98,8 +98,12 @@ public class OrderService {
 
         OrderStatus oldStatus = order.getStatus();
         order.setStatus(OrderStatus.ACCEPTED);
+        if (order.getVersion() == null) {
+            order.setVersion(0L);
+        }
         order = orderRepository.save(order);
         logAudit(order, actorId, oldStatus, order.getStatus(), "MANUAL");
+        log.info("Order {} successfully accepted by seller {}", orderId, actorId);
         return order;
     }
 
@@ -687,6 +691,9 @@ public class OrderService {
         order.setPaymongoCheckoutUrl(session.checkoutUrl());
         order.setPaymentExpiresAt(expiresAt);
         order.setAmountCentavos(amountCentavos);
+        if (order.getVersion() == null) {
+            order.setVersion(0L);
+        }
         order = orderRepository.save(order);
         logAudit(order, actorId, oldStatus, OrderStatus.AWAITING_PAYMENT,
                 "GCASH_CHECKOUT_INITIATED - Session: " + session.sessionId()

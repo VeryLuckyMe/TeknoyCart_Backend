@@ -18,6 +18,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
 
     private static final String RLS_MIGRATION_VERSION = "V2__comprehensive_rls_lockdown";
     private static final String LIFECYCLE_MIGRATION_VERSION = "V3__order_lifecycle_and_verification";
+    private static final String ACCEPT_ORDER_FIX_VERSION = "V4__accept_order_fix_and_paymongo";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -45,6 +46,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
 
         applyRlsMigration();
         applyLifecycleMigration();
+        applyAcceptOrderFixMigration();
     }
 
     private void applyRlsMigration() {
@@ -106,6 +108,37 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             logger.error("Failed to apply Order Lifecycle migration: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applyAcceptOrderFixMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                ACCEPT_ORDER_FIX_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Accept order fix migration [{}] is already applied. Skipping DDL on boot.", ACCEPT_ORDER_FIX_VERSION);
+                return;
+            }
+
+            logger.info("Applying Accept Order Fix & PayMongo migration [{}]...", ACCEPT_ORDER_FIX_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_accept_order_fix.sql");
+            if (resource.exists()) {
+                String acceptFixSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(acceptFixSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    ACCEPT_ORDER_FIX_VERSION
+                );
+                logger.info("Successfully applied Accept Order Fix & PayMongo migration to database.");
+            } else {
+                logger.warn("Accept order fix migration script not found in classpath: db/migration_accept_order_fix.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply Accept Order Fix migration: {}", e.getMessage(), e);
         }
     }
 }

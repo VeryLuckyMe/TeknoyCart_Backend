@@ -38,6 +38,28 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(org.springframework.dao.DataAccessException.class)
+    public ResponseEntity<Map<String, Object>> handleDataAccessException(org.springframework.dao.DataAccessException ex) {
+        logger.error("Database access error caught by global handler: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                "error", "Database Error",
+                "message", "Database transaction could not be completed. Please try again."
+        ));
+    }
+
+    @ExceptionHandler(com.teknoycart.services.PayMongoClient.PayMongoException.class)
+    public ResponseEntity<Map<String, Object>> handlePayMongoException(com.teknoycart.services.PayMongoClient.PayMongoException ex) {
+        logger.error("PayMongo gateway error caught by global handler: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                "timestamp", Instant.now().toString(),
+                "status", HttpStatus.BAD_GATEWAY.value(),
+                "error", "Payment Gateway Error",
+                "message", ex.getMessage() != null ? ex.getMessage() : "Payment gateway error. Please try again later."
+        ));
+    }
+
     /**
      * Catch-all handler: prevents internal class names, stack traces, and
      * implementation details from leaking in production error responses.

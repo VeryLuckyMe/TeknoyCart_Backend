@@ -86,6 +86,40 @@ public class OrderLifecycleTest {
     }
 
     @Test
+    @DisplayName("Seller accepts PLACED order with Cash on Pickup transitions to ACCEPTED")
+    void testAcceptOrderCashOnPickup() {
+        Order order = createOrder(OrderStatus.PLACED);
+        order.setPaymentMethod("CASH_ON_PICKUP");
+        order = orderRepository.saveAndFlush(order);
+
+        Order accepted = orderService.acceptOrder(order.getId(), sellerId);
+        assertEquals(OrderStatus.ACCEPTED, accepted.getStatus());
+        assertEquals("CASH_ON_PICKUP", accepted.getPaymentMethod());
+    }
+
+    @Test
+    @DisplayName("Seller accepts PLACED order with GCash transitions to ACCEPTED")
+    void testAcceptOrderGcash() {
+        Order order = createOrder(OrderStatus.PLACED);
+        order.setPaymentMethod("GCASH");
+        order = orderRepository.saveAndFlush(order);
+
+        Order accepted = orderService.acceptOrder(order.getId(), sellerId);
+        assertEquals(OrderStatus.ACCEPTED, accepted.getStatus());
+        assertEquals("GCASH", accepted.getPaymentMethod());
+    }
+
+    @Test
+    @DisplayName("Non-seller actor is forbidden from accepting order")
+    void testAcceptOrderNonSellerForbidden() {
+        Order order = createOrder(OrderStatus.PLACED);
+        final UUID orderId = order.getId();
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> {
+            orderService.acceptOrder(orderId, buyerId);
+        });
+    }
+
+    @Test
     @DisplayName("COM Flow: Schedule Meetup -> Handoff OTP -> Confirm Receipt -> Completed")
     void testCompleteComOrderFlow() {
         Order order = createOrder(OrderStatus.ACCEPTED);

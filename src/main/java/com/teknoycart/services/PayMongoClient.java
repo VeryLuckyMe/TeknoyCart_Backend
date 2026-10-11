@@ -64,9 +64,14 @@ public class PayMongoClient {
             String cancelUrl,
             long expiresAt) {
 
+        Map<String, Object> lineItem = new LinkedHashMap<>();
+        lineItem.put("name", (description != null && !description.isBlank()) ? description : "TeknoyCart Order");
+        lineItem.put("amount", amountCentavos);
+        lineItem.put("currency", "PHP");
+        lineItem.put("quantity", 1);
+
         Map<String, Object> attributes = new LinkedHashMap<>();
-        attributes.put("amount", amountCentavos);
-        attributes.put("currency", "PHP");
+        attributes.put("line_items", List.of(lineItem));
         attributes.put("payment_method_types", List.of("gcash"));
         attributes.put("description", description);
         attributes.put("reference_number", orderId);
@@ -98,9 +103,26 @@ public class PayMongoClient {
 
         } catch (PayMongoException e) {
             throw e;
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
+            log.error("PayMongo API returned HTTP {}: {}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+            String detail = extractPayMongoErrorDetail(e.getResponseBodyAsString());
+            throw new PayMongoException("PayMongo error: " + (detail != null ? detail : e.getMessage()), e);
         } catch (Exception e) {
+            log.error("Failed to create PayMongo checkout session: {}", e.getMessage(), e);
             throw new PayMongoException("Failed to create PayMongo checkout session", e);
         }
+    }
+
+    private String extractPayMongoErrorDetail(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) return null;
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode errors = root.path("errors");
+            if (errors.isArray() && errors.size() > 0) {
+                return errors.get(0).path("detail").asText(null);
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     /**

@@ -62,8 +62,8 @@ cors:
 # Set PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET as environment variables.
 # Never commit real keys to git.
 paymongo:
-  secret-key: ${PAYMONGO_SECRET_KEY:sk_test_placeholder_replace_me}
-  webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:whsk_test_placeholder_replace_me}
+  secret-key: ${PAYMONGO_SECRET_KEY:}
+  webhook-secret: ${PAYMONGO_WEBHOOK_SECRET:}
   base-url: ${PAYMONGO_BASE_URL:https://api.paymongo.com}
   # Minutes until an AWAITING_PAYMENT checkout session expires and reverts to ACCEPTED.
   checkout-ttl-minutes: ${PAYMONGO_CHECKOUT_TTL_MINUTES:30}

@@ -180,7 +180,9 @@ public class OrderController {
 
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("checkout_url", result.checkoutUrl());
+        response.put("checkoutUrl",  result.checkoutUrl());
         response.put("expires_at",   result.expiresAt().toString());
+        response.put("expiresAt",    result.expiresAt().toString());
         return ResponseEntity.ok(response);
     }
 }

@@ -8,6 +8,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "orders")
+@org.hibernate.annotations.DynamicUpdate
 public class Order {
 
     @Id
@@ -273,11 +274,11 @@ public class Order {
     }
 
     public Long getVersion() {
-        return version;
+        return version != null ? version : 0L;
     }
 
     public void setVersion(Long version) {
-        this.version = version;
+        this.version = version != null ? version : 0L;
     }
 
     public String getPaymentReference() {
