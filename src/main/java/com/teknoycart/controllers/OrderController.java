@@ -18,6 +18,8 @@ import java.util.UUID;
 @RequestMapping("/orders")
 public class OrderController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderController.class);
+
     @Autowired
     private OrderService orderService;
 
@@ -193,7 +195,15 @@ public class OrderController {
     @PostMapping("/{id}/sync-payment")
     public ResponseEntity<Order> syncPayment(@PathVariable UUID id) {
         UUID actorId = getAuthenticatedUserId();
-        return ResponseEntity.ok(orderService.syncPaymongoPayment(id, actorId));
+        try {
+            return ResponseEntity.ok(orderService.syncPaymongoPayment(id, actorId));
+        } catch (org.springframework.orm.ObjectOptimisticLockingFailureException | jakarta.persistence.OptimisticLockException e) {
+            log.info("Optimistic lock conflict during sync-payment for order {} (likely concurrent webhook update). Returning current order.", id);
+            return ResponseEntity.ok(orderService.getOrder(id));
+        } catch (Exception e) {
+            log.warn("Payment sync notice for order {}: {}. Returning latest order state.", id, e.getMessage());
+            return ResponseEntity.ok(orderService.getOrder(id));
+        }
     }
 }
 

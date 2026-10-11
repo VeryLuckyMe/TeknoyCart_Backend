@@ -809,7 +809,11 @@ public class OrderService {
             }
 
             if (isPaid) {
-                markEscrowed(orderId, sessionId);
+                try {
+                    markEscrowed(orderId, sessionId);
+                } catch (Exception ex) {
+                    log.info("Notice while marking escrowed during sync for order {}: {}", orderId, ex.getMessage());
+                }
                 return getOrder(orderId);
             }
         } catch (Exception e) {
