@@ -296,13 +296,15 @@ public class AuthController {
         if (user.isLocked()) {
             if (user.getLockUntil() != null
                     && LocalDateTime.now(java.time.ZoneId.of("UTC")).isBefore(user.getLockUntil())) {
-                long remainingMinutes = java.time.Duration.between(
+                long remainingSeconds = Math.max(0, java.time.Duration.between(
                         LocalDateTime.now(java.time.ZoneId.of("UTC")), user.getLockUntil()
-                ).toMinutes() + 1;
+                ).getSeconds());
+                long remainingMinutes = (remainingSeconds / 60) + 1;
                 return ResponseEntity.status(403).body(Map.of(
                         "type", "ACCOUNT_LOCKED",
                         "message", "Account is temporarily locked. Try again in " + remainingMinutes + " minutes.",
-                        "lockUntil", user.getLockUntil().toString()
+                        "lockUntil", user.getLockUntil().toString(),
+                        "remainingSeconds", remainingSeconds
                 ));
             } else {
                 // Lock expired - reset parameters
@@ -342,15 +344,16 @@ public class AuthController {
             user.setFailedAttempts(attempts);
 
             if (attempts >= 5) {
-                LocalDateTime lockUntil = LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(15);
+                LocalDateTime lockUntil = LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(10);
                 user.setLocked(true);
                 user.setLockUntil(lockUntil);
                 userRepository.save(user);
 
                 return ResponseEntity.status(403).body(Map.of(
                         "type", "ACCOUNT_LOCKED",
-                        "message", "Too many failed attempts. Account locked for 15 minutes.",
-                        "lockUntil", lockUntil.toString()
+                        "message", "Too many failed attempts. Account locked for 10 minutes.",
+                        "lockUntil", lockUntil.toString(),
+                        "remainingSeconds", 600
                 ));
             }
 
