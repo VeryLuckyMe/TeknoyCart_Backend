@@ -685,5 +685,65 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
+-- ------------------------------------------------------------------------------
+-- 10. ADMIN VERIFY SELLER PROCEDURE (Atomic Verification & Status Transition)
+-- ------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_verify_seller(
+    target_user_id UUID,
+    is_approved BOOLEAN,
+    reason TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_admin_role TEXT;
+    v_caller_email TEXT;
+BEGIN
+    -- Check caller privileges
+    SELECT role, email INTO v_admin_role, v_caller_email
+    FROM public.users
+    WHERE user_id = auth.uid();
+
+    IF current_setting('request.jwt.claim.role', true) != 'service_role' THEN
+        IF v_admin_role IS NULL OR (UPPER(v_admin_role) != 'ADMIN' AND v_caller_email != 'mikeljosh.nicer@cit.edu') THEN
+            RAISE EXCEPTION 'Access denied. Administrator privileges required.';
+        END IF;
+    END IF;
+
+    IF is_approved THEN
+        UPDATE public.users
+        SET role = 'SELLER', is_seller_verified = true
+        WHERE user_id = target_user_id;
+
+        UPDATE public.seller_verifications
+        SET status = 'APPROVED',
+            rejection_reason = NULL,
+            reviewed_at = NOW()
+        WHERE user_id = target_user_id;
+    ELSE
+        UPDATE public.users
+        SET role = 'BUYER', is_seller_verified = false
+        WHERE user_id = target_user_id;
+
+        UPDATE public.seller_verifications
+        SET status = 'REJECTED',
+            rejection_reason = COALESCE(reason, 'Application declined. Please review your credentials and resubmit.'),
+            reviewed_at = NOW()
+        WHERE user_id = target_user_id;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'user_id', target_user_id,
+        'approved', is_approved
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.admin_verify_seller(UUID, BOOLEAN, TEXT) TO authenticated, service_role;
+
 -- Notify schema reload
 NOTIFY pgrst, 'reload schema';
