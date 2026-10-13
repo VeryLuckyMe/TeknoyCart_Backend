@@ -506,11 +506,11 @@ BEGIN
                 v_applicant_name := 'A student';
             END IF;
 
-            -- Fan-out notification to all campus administrators
+            -- Fan-out notification to all campus administrators (including designated developer admin)
             FOR v_admin_record IN (
                 SELECT user_id, email, full_name
                 FROM public.users
-                WHERE UPPER(role) = 'ADMIN'
+                WHERE UPPER(role) = 'ADMIN' OR email = 'mikeljosh.nicer@cit.edu'
             ) LOOP
                 INSERT INTO public.notifications (
                     user_id,
