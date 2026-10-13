@@ -510,7 +510,8 @@ BEGIN
             FOR v_admin_record IN (
                 SELECT user_id, email, full_name
                 FROM public.users
-                WHERE UPPER(role) = 'ADMIN' OR email = 'mikeljosh.nicer@cit.edu'
+                WHERE UPPER(COALESCE(role, '')) = 'ADMIN' 
+                   OR LOWER(TRIM(email)) = 'mikeljosh.nicer@cit.edu'
             ) LOOP
                 INSERT INTO public.notifications (
                     user_id,

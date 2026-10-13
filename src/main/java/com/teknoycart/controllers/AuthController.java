@@ -29,6 +29,12 @@ public class AuthController {
     @Autowired
     private EmailService emailService;
 
+    @Autowired(required = false)
+    private com.teknoycart.repositories.NotificationRepository notificationRepository;
+
+    @Autowired(required = false)
+    private com.teknoycart.services.PushNotificationService pushNotificationService;
+
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody User user) {
         if (user == null || user.getEmail() == null || user.getEmail().trim().isEmpty()
@@ -475,6 +481,9 @@ public class AuthController {
         user.setSellerVerified(false);
         userRepository.save(user);
 
+        // Dispatch notifications to administrators across In-App, Email, and Push
+        notifyAdminsOfSellerApplication(user);
+
         Map<String, Object> sanitizedUser = Map.of(
                 "userId", user.getUserId() != null ? user.getUserId().toString() : "",
                 "fullName", user.getFullName() != null ? user.getFullName() : "",
@@ -488,6 +497,82 @@ public class AuthController {
                 "message", "Seller upgrade request submitted. Admin will review your account.",
                 "user", sanitizedUser
         ));
+    }
+
+    private void notifyAdminsOfSellerApplication(User applicant) {
+        try {
+            java.util.List<User> admins = new java.util.ArrayList<>();
+            try {
+                admins.addAll(userRepository.findAllByRole("ADMIN"));
+            } catch (Exception ignored) {}
+
+            userRepository.findByEmail("mikeljosh.nicer@cit.edu").ifPresent(dev -> {
+                boolean exists = admins.stream().anyMatch(a -> a.getUserId() != null && a.getUserId().equals(dev.getUserId()));
+                if (!exists) admins.add(dev);
+            });
+
+            String applicantName = (applicant.getFullName() != null && !applicant.getFullName().trim().isEmpty())
+                    ? applicant.getFullName()
+                    : (applicant.getEmail() != null ? applicant.getEmail() : "A student");
+
+            String title = "📋 New Seller Application";
+            String body = applicantName + " submitted KYC verification (STUDENT) for administrative review.";
+            String refId = applicant.getUserId() != null ? applicant.getUserId().toString() : "";
+
+            for (User admin : admins) {
+                if (admin.getUserId() == null) continue;
+
+                // 1. In-App Notification (saved to public.notifications table)
+                if (notificationRepository != null) {
+                    try {
+                        com.teknoycart.models.Notification notif = new com.teknoycart.models.Notification(
+                                admin.getUserId(),
+                                title,
+                                body,
+                                "KYC",
+                                "KYC",
+                                refId
+                        );
+                        long window = System.currentTimeMillis() / (1000 * 60 * 10);
+                        notif.setDedupeKey("kyc:apply:" + refId + ":admin:" + admin.getUserId() + ":" + window);
+                        notif.setPushStatus("PENDING");
+                        notif.setEmailStatus("PENDING");
+                        notificationRepository.save(notif);
+                    } catch (Exception ignored) {}
+                }
+
+                // 2. Direct transactional email dispatch to admin inbox
+                if (emailService != null && admin.getEmail() != null) {
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        try {
+                            emailService.sendNotificationEmailSync(
+                                    admin.getEmail(),
+                                    admin.getFullName() != null ? admin.getFullName() : "Admin",
+                                    title,
+                                    body,
+                                    "KYC",
+                                    refId
+                            );
+                        } catch (Exception e) {
+                            org.slf4j.LoggerFactory.getLogger(AuthController.class)
+                                    .warn("Async email dispatch notice for {}: {}", admin.getEmail(), e.getMessage());
+                        }
+                    });
+                }
+
+                // 3. Direct FCM device push
+                if (pushNotificationService != null) {
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        try {
+                            pushNotificationService.sendToUser(admin.getUserId(), title, body, "KYC", refId);
+                        } catch (Exception ignored) {}
+                    });
+                }
+            }
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(AuthController.class)
+                    .error("Failed to notify admins of seller application: {}", e.getMessage(), e);
+        }
     }
 }
 

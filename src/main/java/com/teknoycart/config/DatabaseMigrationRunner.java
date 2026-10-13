@@ -20,7 +20,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String LIFECYCLE_MIGRATION_VERSION = "V3__order_lifecycle_and_verification";
     private static final String ACCEPT_ORDER_FIX_VERSION = "V4__accept_order_fix_and_paymongo";
     private static final String STATUS_RESILIENCE_VERSION = "V5__order_status_and_audit_resilience";
-    private static final String NOTIFICATIONS_MIGRATION_VERSION = "V6__notifications_outbox_and_kyc_admin_notify";
+    private static final String NOTIFICATIONS_MIGRATION_VERSION = "V7__notifications_admin_fanout_and_verify_procedure";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
