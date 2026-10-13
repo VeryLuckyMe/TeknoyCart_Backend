@@ -169,8 +169,13 @@ public class EmailService {
                 actionUrl = "https://teknoy-cart-web.vercel.app/orders/" + safeRefId;
                 actionText = "View Order Details";
             } else if ("KYC".equalsIgnoreCase(safeRefType)) {
-                actionUrl = "https://teknoy-cart-web.vercel.app/profile";
-                actionText = "View Verification Status";
+                if (safeTitle.contains("Application") || safeTitle.contains("Review")) {
+                    actionUrl = "https://teknoy-cart-web.vercel.app/admin";
+                    actionText = "Review Seller Application";
+                } else {
+                    actionUrl = "https://teknoy-cart-web.vercel.app/profile";
+                    actionText = "View Verification Status";
+                }
             }
 
             String htmlContent = "<div style=\"font-family: 'Outfit', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #ECECEF; border-radius: 16px;\">"

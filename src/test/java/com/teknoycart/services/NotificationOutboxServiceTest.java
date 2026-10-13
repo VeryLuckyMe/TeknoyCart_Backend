@@ -148,4 +148,47 @@ public class NotificationOutboxServiceTest {
         assertEquals("Connection timeout to FCM", saved.getPushError());
         assertEquals(3, saved.getRetryCount());
     }
+
+    @Test
+    @DisplayName("processPendingDeliveries dispatches Admin KYC seller application notification to both push and email")
+    void testAdminKycSellerApplicationNotificationDispatch() {
+        UUID adminId = UUID.randomUUID();
+        Notification notif = new Notification(
+                adminId,
+                "📋 New Seller Application",
+                "Maria Santos submitted KYC verification (STUDENT) for administrative review.",
+                "KYC",
+                "KYC",
+                "kyc-uuid-101"
+        );
+        notif.setPushStatus("PENDING");
+        notif.setEmailStatus("PENDING");
+        notif.setRetryCount(0);
+
+        NotificationRepository repo = mock(NotificationRepository.class);
+        when(repo.findPendingForUpdateSkipLocked(50)).thenReturn(List.of(notif));
+
+        PushNotificationService pushService = mock(PushNotificationService.class);
+        when(pushService.sendToUser(eq(adminId), eq("📋 New Seller Application"), any(), eq("KYC"), eq("kyc-uuid-101")))
+                .thenReturn(true);
+
+        EmailService emailService = mock(EmailService.class);
+        when(emailService.sendNotificationEmail(eq(adminId), eq("📋 New Seller Application"), any(), eq("KYC"), eq("kyc-uuid-101")))
+                .thenReturn(true);
+
+        NotificationOutboxService outbox = new NotificationOutboxService();
+        outbox.setNotificationRepository(repo);
+        outbox.setPushNotificationService(pushService);
+        outbox.setEmailService(emailService);
+
+        outbox.processPendingDeliveries();
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(repo, times(1)).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertEquals("SENT", saved.getPushStatus());
+        assertEquals("SENT", saved.getEmailStatus());
+        assertEquals(1, saved.getRetryCount());
+    }
 }

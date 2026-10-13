@@ -480,53 +480,106 @@ CREATE TRIGGER trg_order_event_notify
     EXECUTE FUNCTION public.fn_notify_order_event();
 
 -- ------------------------------------------------------------------------------
--- 6. SELLER KYC STATUS TRIGGER (Outbox-Aware, Error-Logged)
+-- 6. SELLER KYC STATUS & SUBMISSION TRIGGER (Admin Fan-out + Applicant Decisions)
 -- ------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.fn_notify_kyc_status_change()
+CREATE OR REPLACE FUNCTION public.fn_notify_kyc_event()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+    v_applicant_name TEXT;
+    v_admin_record RECORD;
 BEGIN
     BEGIN
-        IF OLD.status IS NOT DISTINCT FROM NEW.status THEN
+        -- 1. NOTIFY ADMINS: When an application is submitted or resubmitted with PENDING status
+        IF (TG_OP = 'INSERT' AND NEW.status = 'PENDING') OR
+           (TG_OP = 'UPDATE' AND NEW.status = 'PENDING' AND OLD.status IS DISTINCT FROM NEW.status) THEN
+
+            SELECT COALESCE(NULLIF(TRIM(full_name), ''), NULLIF(TRIM(email), ''), 'A student')
+            INTO v_applicant_name
+            FROM public.users
+            WHERE user_id = NEW.user_id;
+
+            IF v_applicant_name IS NULL THEN
+                v_applicant_name := 'A student';
+            END IF;
+
+            -- Fan-out notification to all campus administrators
+            FOR v_admin_record IN (
+                SELECT user_id, email, full_name
+                FROM public.users
+                WHERE UPPER(role) = 'ADMIN'
+            ) LOOP
+                INSERT INTO public.notifications (
+                    user_id,
+                    title,
+                    body,
+                    type,
+                    reference_id,
+                    reference_type,
+                    dedupe_key,
+                    delivery_channels,
+                    push_status,
+                    email_status
+                ) VALUES (
+                    v_admin_record.user_id,
+                    '📋 New Seller Application',
+                    v_applicant_name || ' submitted KYC verification (' || COALESCE(NEW.seller_type, 'STUDENT') || ') for administrative review.',
+                    'KYC',
+                    NEW.id::TEXT,
+                    'KYC',
+                    'kyc:' || NEW.id::TEXT || ':PENDING:admin:' || v_admin_record.user_id::TEXT,
+                    ARRAY['IN_APP', 'PUSH', 'EMAIL'],
+                    'PENDING',
+                    'PENDING'
+                ) ON CONFLICT (user_id, dedupe_key) DO NOTHING;
+            END LOOP;
+
             RETURN NEW;
         END IF;
 
-        IF NEW.status = 'APPROVED' THEN
-            INSERT INTO public.notifications (
-                user_id, title, body, type, reference_id, reference_type,
-                dedupe_key, delivery_channels, push_status, email_status
-            ) VALUES (
-                NEW.user_id,
-                '🎉 Seller Verification Approved!',
-                'You are now an authorized CIT-U vendor. You can now post listings and accept orders!',
-                'KYC',
-                NEW.id::TEXT,
-                'KYC',
-                'kyc:' || NEW.id::TEXT || ':APPROVED',
-                ARRAY['IN_APP', 'PUSH', 'EMAIL'],
-                'PENDING',
-                'PENDING'
-            ) ON CONFLICT (user_id, dedupe_key) DO NOTHING;
+        -- 2. NOTIFY APPLICANT: When status is APPROVED or REJECTED by admin
+        IF TG_OP = 'UPDATE' THEN
+            IF OLD.status IS NOT DISTINCT FROM NEW.status THEN
+                RETURN NEW;
+            END IF;
 
-        ELSIF NEW.status = 'REJECTED' THEN
-            INSERT INTO public.notifications (
-                user_id, title, body, type, reference_id, reference_type,
-                dedupe_key, delivery_channels, push_status, email_status
-            ) VALUES (
-                NEW.user_id,
-                'Verification Needs Attention',
-                'Your seller verification was rejected: ' || COALESCE(NEW.rejection_reason, 'Please review your ID and resubmit.') || '.',
-                'KYC',
-                NEW.id::TEXT,
-                'KYC',
-                'kyc:' || NEW.id::TEXT || ':REJECTED',
-                ARRAY['IN_APP', 'PUSH', 'EMAIL'],
-                'PENDING',
-                'PENDING'
-            ) ON CONFLICT (user_id, dedupe_key) DO NOTHING;
+            IF NEW.status = 'APPROVED' THEN
+                INSERT INTO public.notifications (
+                    user_id, title, body, type, reference_id, reference_type,
+                    dedupe_key, delivery_channels, push_status, email_status
+                ) VALUES (
+                    NEW.user_id,
+                    '🎉 Seller Verification Approved!',
+                    'You are now an authorized CIT-U vendor. You can now post listings and accept orders!',
+                    'KYC',
+                    NEW.id::TEXT,
+                    'KYC',
+                    'kyc:' || NEW.id::TEXT || ':APPROVED',
+                    ARRAY['IN_APP', 'PUSH', 'EMAIL'],
+                    'PENDING',
+                    'PENDING'
+                ) ON CONFLICT (user_id, dedupe_key) DO NOTHING;
+
+            ELSIF NEW.status = 'REJECTED' THEN
+                INSERT INTO public.notifications (
+                    user_id, title, body, type, reference_id, reference_type,
+                    dedupe_key, delivery_channels, push_status, email_status
+                ) VALUES (
+                    NEW.user_id,
+                    'Verification Needs Attention',
+                    'Your seller verification was rejected: ' || COALESCE(NEW.rejection_reason, 'Please review your ID and resubmit.') || '.',
+                    'KYC',
+                    NEW.id::TEXT,
+                    'KYC',
+                    'kyc:' || NEW.id::TEXT || ':REJECTED',
+                    ARRAY['IN_APP', 'PUSH', 'EMAIL'],
+                    'PENDING',
+                    'PENDING'
+                ) ON CONFLICT (user_id, dedupe_key) DO NOTHING;
+            END IF;
         END IF;
 
     EXCEPTION WHEN OTHERS THEN
@@ -542,7 +595,7 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
 
-        RAISE WARNING 'fn_notify_kyc_status_change failed for verification %: % (SQLSTATE %)',
+        RAISE WARNING 'fn_notify_kyc_event failed for verification %: % (SQLSTATE %)',
             COALESCE(NEW.id::TEXT, 'UNKNOWN'), SQLERRM, SQLSTATE;
     END;
 
@@ -552,9 +605,9 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_kyc_status_notify ON public.seller_verifications;
 CREATE TRIGGER trg_kyc_status_notify
-    AFTER UPDATE OF status ON public.seller_verifications
+    AFTER INSERT OR UPDATE OF status ON public.seller_verifications
     FOR EACH ROW
-    EXECUTE FUNCTION public.fn_notify_kyc_status_change();
+    EXECUTE FUNCTION public.fn_notify_kyc_event();
 
 -- ------------------------------------------------------------------------------
 -- 7. PHASE 2: FCM DEVICE TOKEN TABLE (Shared Device Resilient: UNIQUE(token))

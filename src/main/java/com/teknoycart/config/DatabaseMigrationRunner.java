@@ -20,6 +20,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String LIFECYCLE_MIGRATION_VERSION = "V3__order_lifecycle_and_verification";
     private static final String ACCEPT_ORDER_FIX_VERSION = "V4__accept_order_fix_and_paymongo";
     private static final String STATUS_RESILIENCE_VERSION = "V5__order_status_and_audit_resilience";
+    private static final String NOTIFICATIONS_MIGRATION_VERSION = "V6__notifications_outbox_and_kyc_admin_notify";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -107,6 +108,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applyLifecycleMigration();
         applyAcceptOrderFixMigration();
         applyStatusResilienceMigration();
+        applyNotificationsMigration();
     }
 
     private void applyRlsMigration() {
@@ -230,6 +232,37 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             logger.error("Failed to apply Order Status Resilience migration: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applyNotificationsMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                NOTIFICATIONS_MIGRATION_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Notifications & KYC admin notification migration [{}] is already applied. Skipping DDL on boot.", NOTIFICATIONS_MIGRATION_VERSION);
+                return;
+            }
+
+            logger.info("Applying In-App Notification Center & KYC Admin Fan-out migration [{}]...", NOTIFICATIONS_MIGRATION_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_notifications.sql");
+            if (resource.exists()) {
+                String notificationsSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(notificationsSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    NOTIFICATIONS_MIGRATION_VERSION
+                );
+                logger.info("Successfully applied In-App Notification Center & KYC Admin Fan-out migration to database.");
+            } else {
+                logger.warn("Notifications migration script not found in classpath: db/migration_notifications.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply In-App Notification Center & KYC Admin Fan-out migration: {}", e.getMessage(), e);
         }
     }
 }
