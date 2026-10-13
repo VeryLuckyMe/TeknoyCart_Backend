@@ -64,6 +64,12 @@ public class CorsSecurityTest {
     @MockBean
     private com.teknoycart.services.EmailService emailService;
 
+    @MockBean
+    private com.teknoycart.repositories.NotificationRepository notificationRepository;
+
+    @MockBean
+    private com.teknoycart.repositories.UserFcmTokenRepository userFcmTokenRepository;
+
     @Test
     @DisplayName("CORS preflight from allowed origin (Vercel) returns 200 with correct headers")
     void testAllowedOriginReturnsCorrectCorsHeaders() throws Exception {

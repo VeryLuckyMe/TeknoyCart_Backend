@@ -15,11 +15,14 @@ Thumbs.db
 # Secrets & Local Configurations
 src/main/resources/application-local*.yml
 !src/main/resources/application-local.yml.example
+*firebase*.json
+serviceAccountKey.json
 *.env
 .env*
 *.key
 *.pem
 *.p12
+*.log
 
 # Python artifacts
 __pycache__/

@@ -44,4 +44,31 @@ public class EmailServiceTest {
         Boolean result = future.get();
         assertFalse(result, "Expected async call to resolve with false indicator when unconfigured");
     }
+
+    @Test
+    @DisplayName("sendNotificationEmailSync returns false and skips dispatch when Brevo API key is missing or blank")
+    void testNotificationEmailWithMissingApiKey() {
+        EmailService service = new EmailService();
+        service.setBrevoApiKey(null);
+
+        boolean result = service.sendNotificationEmailSync("student@cit.edu", "Test Student", "Order Update", "Your order has been escrowed", "ORDER", "order-123");
+        assertFalse(result, "Expected false return indicator when API key is null");
+
+        service.setBrevoApiKey("   ");
+        result = service.sendNotificationEmailSync("student@cit.edu", "Test Student", "Order Update", "Your order has been escrowed", "ORDER", "order-123");
+        assertFalse(result, "Expected false return indicator when API key is blank");
+    }
+
+    @Test
+    @DisplayName("sendNotificationEmail returns false gracefully when user is not found in repository")
+    void testNotificationEmailUserNotFound() {
+        com.teknoycart.repositories.UserRepository repo = org.mockito.Mockito.mock(com.teknoycart.repositories.UserRepository.class);
+        org.mockito.Mockito.when(repo.findById(org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Optional.empty());
+
+        EmailService service = new EmailService();
+        service.setUserRepository(repo);
+
+        boolean result = service.sendNotificationEmail(java.util.UUID.randomUUID(), "Order Completed", "Item delivered", "ORDER", "order-456");
+        assertFalse(result, "Expected false when recipient user is not found in database");
+    }
 }
