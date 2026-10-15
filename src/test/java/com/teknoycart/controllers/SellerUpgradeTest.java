@@ -100,9 +100,9 @@ public class SellerUpgradeTest {
         assertNotNull(body);
         assertTrue(body.get("message").toString().contains("Seller upgrade request submitted"));
 
-        // Verify in database that role changed to SELLER and is_seller_verified is false
+        // Verify in database that role remains BUYER and is_seller_verified is false (Ponytail Audit H4)
         User updated = userRepository.findByEmail("buyer@cit.edu").orElseThrow();
-        assertEquals("SELLER", updated.getRole());
+        assertEquals("BUYER", updated.getRole());
         assertFalse(updated.isSellerVerified());
     }
 

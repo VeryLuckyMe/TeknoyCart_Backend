@@ -482,8 +482,8 @@ public class AuthController {
             ));
         }
 
-        // Perform server-side upgrade
-        user.setRole("SELLER");
+        // Keep role as BUYER — seller status is pending admin approval (Ponytail Audit H4)
+        user.setRole("BUYER");
         user.setSellerVerified(false);
         userRepository.save(user);
 
@@ -511,11 +511,6 @@ public class AuthController {
             try {
                 admins.addAll(userRepository.findAllByRole("ADMIN"));
             } catch (Exception ignored) {}
-
-            userRepository.findByEmail("mikeljosh.nicer@cit.edu").ifPresent(dev -> {
-                boolean exists = admins.stream().anyMatch(a -> a.getUserId() != null && a.getUserId().equals(dev.getUserId()));
-                if (!exists) admins.add(dev);
-            });
 
             String applicantName = (applicant.getFullName() != null && !applicant.getFullName().trim().isEmpty())
                     ? applicant.getFullName()

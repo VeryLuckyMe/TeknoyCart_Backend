@@ -224,9 +224,7 @@ public class OrderService {
                 order.getStatus() != OrderStatus.PAYMENT_VERIFIED &&
                 order.getStatus() != OrderStatus.ESCROWED &&
                 order.getStatus() != OrderStatus.MEETUP_SCHEDULED &&
-                order.getStatus() != OrderStatus.NEEDS_REVIEW &&
-                order.getStatus() != OrderStatus.APPROVED &&
-                order.getStatus() != OrderStatus.SELLER_ACCEPTED) {
+                order.getStatus() != OrderStatus.NEEDS_REVIEW) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Meetup cannot be scheduled from state: " + order.getStatus());
         }
@@ -278,7 +276,11 @@ public class OrderService {
                     "OTP has expired. Please reschedule the meetup to generate a new code.");
         }
 
-        if (order.getHandoffOtp() == null || !order.getHandoffOtp().equals(otp)) {
+        // Constant-time OTP comparison (Ponytail Audit H5)
+        if (order.getHandoffOtp() == null || otp == null ||
+                !java.security.MessageDigest.isEqual(
+                        order.getHandoffOtp().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        otp.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             int attempts = orderOtpService.recordFailedAttempt(order.getId(), actorId, MAX_OTP_ATTEMPTS);
             int remaining = MAX_OTP_ATTEMPTS - attempts;
             if (remaining <= 0) {
@@ -479,9 +481,23 @@ public class OrderService {
                     "Return OTP has expired. Please approve/reschedule return to generate a new code.");
         }
 
-        if (order.getReturnOtp() == null || !order.getReturnOtp().equals(otp)) {
+        // Constant-time Return OTP comparison (Ponytail Audit H5)
+        if (order.getReturnOtp() == null || otp == null ||
+                !java.security.MessageDigest.isEqual(
+                        order.getReturnOtp().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        otp.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             int attempts = orderOtpService.recordFailedReturnAttempt(order.getId(), actorId, MAX_OTP_ATTEMPTS);
             int remaining = MAX_OTP_ATTEMPTS - attempts;
+            if (remaining <= 0) {
+                // Lockout triggered: transition order to NEEDS_REVIEW (Ponytail Audit M4)
+                order.setStatus(OrderStatus.NEEDS_REVIEW);
+                order.setReturnOtp(null);
+                order.setReturnOtpCreatedAt(null);
+                orderRepository.save(order);
+                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                        "Return OTP verification locked after " + MAX_OTP_ATTEMPTS + " failed attempts. " +
+                                "Please reschedule return to generate a new code.");
+            }
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Invalid Return OTP. " + remaining + " attempt(s) remaining.");
         }
@@ -818,10 +834,6 @@ public class OrderService {
                         break;
                     }
                 }
-                // If payments array has items, in PayMongo it represents successful captures
-                if (!isPaid && payments.size() > 0) {
-                    isPaid = true;
-                }
             }
             String sessionStatus = sessionAttrs.path("status").asText("");
             if ("paid".equalsIgnoreCase(sessionStatus)) {
@@ -896,7 +908,8 @@ public class OrderService {
         // Fallback: if amount_centavos already set (re-initiation path), reuse it.
         if (order.getAmountCentavos() != null) return order.getAmountCentavos();
         if (order.getTotalAmount() != null) {
-            return order.getTotalAmount().multiply(new java.math.BigDecimal(100)).longValueExact();
+            return order.getTotalAmount().multiply(new java.math.BigDecimal(100))
+                    .setScale(0, java.math.RoundingMode.HALF_UP).longValue();
         }
         throw new IllegalStateException("Order " + orderId + " has neither amountCentavos nor totalAmount set");
     }
