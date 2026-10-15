@@ -212,7 +212,10 @@ public class AuthController {
 
     private String cleanUrl(String rawUrl) {
         if (rawUrl == null || rawUrl.isBlank()) {
-            return "https://chmtvasbhkbrvydbajnd.supabase.co";
+            throw new IllegalStateException(
+                "[TeknoyCart] FATAL: supabase.url is not configured. " +
+                "Set the SUPABASE_URL environment variable or supabase.url in application.yml. " +
+                "Refusing to start with missing Supabase configuration.");
         }
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("https?://[^\\s)\\]\"']+").matcher(rawUrl);
         if (m.find()) {
@@ -223,7 +226,10 @@ public class AuthController {
 
     private String cleanJwt(String rawKey) {
         if (rawKey == null || rawKey.isBlank()) {
-            return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobXR2YXNiaGticnZ5ZGJham5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NjMwMDgsImV4cCI6MjA5NTMzOTAwOH0.IJJIrh-dr4xRoXPPeBJoN_pVVHrNY4db5E1VY1Czj3I";
+            throw new IllegalStateException(
+                "[TeknoyCart] FATAL: supabase.anon-key is not configured. " +
+                "Set the SUPABASE_ANON_KEY environment variable or supabase.anon-key in application.yml. " +
+                "Refusing to start with missing Supabase configuration.");
         }
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("eyJ[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_.-]+").matcher(rawKey);
         if (m.find()) {

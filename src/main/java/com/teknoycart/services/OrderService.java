@@ -516,10 +516,14 @@ public class OrderService {
     @Transactional
     public Order confirmRefund(UUID orderId, UUID actorId, String refundReference) {
         Order order = getOrder(orderId);
+        // Ponytail Audit (C-3): Only the SELLER may mark a refund completed.
+        // The seller is the party who physically issues the cash or confirms the return.
+        // Buyers who believe a refund was denied should use escalateDispute() instead.
         boolean isSeller = actorId.equals(order.getSellerId());
-        boolean isBuyer = actorId.equals(order.getBuyerId());
-        if (!isSeller && !isBuyer) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the buyer or seller can resolve a refund");
+        if (!isSeller) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only the seller can confirm that a refund has been issued. " +
+                    "If you believe the refund was denied, please escalate the dispute to admin mediation.");
         }
         if (order.getStatus() != OrderStatus.REFUND_REQUESTED && order.getStatus() != OrderStatus.DISPUTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -535,9 +539,10 @@ public class OrderService {
         order = orderRepository.save(order);
         String refInfo = (order.getRefundReference() != null) ? " - Refund Ref: " + order.getRefundReference() : "";
         logAudit(order, actorId, oldStatus, OrderStatus.REFUND_COMPLETED,
-                (isSeller ? "SELLER_REFUND_ISSUED" : "BUYER_REFUND_CONFIRMED") + refInfo);
+                "SELLER_REFUND_ISSUED" + refInfo);
         return order;
     }
+
 
     @Transactional
     public Order escalateDispute(UUID orderId, UUID actorId, String reason) {
