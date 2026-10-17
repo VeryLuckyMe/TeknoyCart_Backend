@@ -21,6 +21,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String ACCEPT_ORDER_FIX_VERSION = "V4__accept_order_fix_and_paymongo";
     private static final String STATUS_RESILIENCE_VERSION = "V5__order_status_and_audit_resilience";
     private static final String NOTIFICATIONS_MIGRATION_VERSION = "V7__notifications_admin_fanout_and_verify_procedure";
+    private static final String P6_HARDENING_VERSION = "V8__admin_backdoor_hardening";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -109,6 +110,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applyAcceptOrderFixMigration();
         applyStatusResilienceMigration();
         applyNotificationsMigration();
+        applyP6HardeningMigration();
     }
 
     private void applyRlsMigration() {
@@ -263,6 +265,37 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             logger.error("Failed to apply In-App Notification Center & KYC Admin Fan-out migration: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applyP6HardeningMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                P6_HARDENING_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("P6 admin backdoor hardening migration [{}] is already applied. Skipping DDL on boot.", P6_HARDENING_VERSION);
+                return;
+            }
+
+            logger.info("Applying P6 admin backdoor & KYC self-approval hardening migration [{}]...", P6_HARDENING_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_p6_admin_backdoor_hardening.sql");
+            if (resource.exists()) {
+                String p6Sql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(p6Sql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    P6_HARDENING_VERSION
+                );
+                logger.info("Successfully applied P6 admin backdoor & KYC self-approval hardening migration to database.");
+            } else {
+                logger.warn("P6 hardening migration script not found in classpath: db/migration_p6_admin_backdoor_hardening.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply P6 admin backdoor hardening migration: {}", e.getMessage(), e);
         }
     }
 }
