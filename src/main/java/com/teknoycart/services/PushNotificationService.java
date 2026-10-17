@@ -57,21 +57,8 @@ public class PushNotificationService {
                 serviceAccount = new ByteArrayInputStream(firebaseCredentialsJson.getBytes(StandardCharsets.UTF_8));
                 log.info("Initializing Firebase from inline credentials JSON.");
             } else if (firebaseCredentialsPath != null && !firebaseCredentialsPath.trim().isEmpty() && !firebaseCredentialsPath.startsWith("${")) {
-                if (firebaseCredentialsPath.startsWith("classpath:")) {
-                    String cpPath = firebaseCredentialsPath.substring("classpath:".length());
-                    serviceAccount = getClass().getClassLoader().getResourceAsStream(cpPath);
-                } else {
-                    serviceAccount = new FileInputStream(firebaseCredentialsPath);
-                }
+                serviceAccount = new FileInputStream(firebaseCredentialsPath);
                 log.info("Initializing Firebase from credentials path: {}", firebaseCredentialsPath);
-            }
-
-            if (serviceAccount == null) {
-                InputStream cpStream = getClass().getClassLoader().getResourceAsStream("firebase-service-account.json");
-                if (cpStream != null) {
-                    serviceAccount = cpStream;
-                    log.info("Initializing Firebase from classpath: firebase-service-account.json");
-                }
             }
 
             if (serviceAccount != null) {

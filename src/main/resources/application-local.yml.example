@@ -32,3 +32,17 @@ server:
 brevo:
   api:
     key: your-brevo-api-key-here
+
+# PayMongo (use TEST keys locally; rotate after any exposure)
+paymongo:
+  secret-key: your-paymongo-test-secret-key
+  webhook-secret: your-paymongo-test-webhook-secret
+  test-mode: true
+
+# Push notifications: optional locally. When unset, PushNotificationService
+# runs in simulation mode. Prefer FIREBASE_CREDENTIALS_JSON (env var) over a
+# file, and never commit a service-account JSON.
+firebase:
+  credentials-json: ""
+  credentials-path: ""
+
