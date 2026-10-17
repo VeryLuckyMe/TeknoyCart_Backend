@@ -49,6 +49,8 @@ public class SecurityConfig {
                 // Full public URL is /api/webhooks/** and /api/payments/** (context-path /api prepended by server config)
                 .requestMatchers("/webhooks/**", "/payments/**").permitAll()
                 .requestMatchers("/orders/**").authenticated()
+                // Actuator health probe for container/orchestrator healthchecks: unauthenticated
+                .requestMatchers("/actuator/health").permitAll()
                 // DEVELOPER TIP: If you add new business REST controllers (e.g., /api/products)
                 // in the future, you must either:
                 // 1. Add them to the permitAll list above (e.g., "/auth/**", "/error", "/api/**")

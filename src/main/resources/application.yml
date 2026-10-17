@@ -43,6 +43,13 @@ server:
     include-binding-errors: never
     include-stacktrace: never
 
+# Actuator: expose ONLY the health endpoint (served at /api/actuator/health).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
 jwt:
   secret: ${JWT_SECRET:}
   expiration: 86400000 # 24 Hours in milliseconds

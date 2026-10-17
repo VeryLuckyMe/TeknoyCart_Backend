@@ -1,0 +1,25 @@
+# Maven build output
+target/
+
+# IDE & OS noise
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local secrets — must never enter the image (src/main/resources holds some)
+**/application-local*.yml
+!**/application-local.yml.example
+**/*firebase*.json
+**/serviceAccountKey.json
+**/*.env
+**/*.key
+**/*.pem
+**/*.p12
+**/*.log
+
+# Python harness artifacts (not part of the app)
+**/__pycache__/
+**/*.pyc
+test_*.py
