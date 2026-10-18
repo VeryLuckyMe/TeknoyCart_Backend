@@ -40,13 +40,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(org.springframework.dao.DataAccessException.class)
     public ResponseEntity<Map<String, Object>> handleDataAccessException(org.springframework.dao.DataAccessException ex) {
-        logger.error("Database access error caught by global handler: {}", ex.getMessage(), ex);
         String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        logger.error("Database access error caught by global handler: {}", detail, ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "timestamp", Instant.now().toString(),
                 "status", HttpStatus.INTERNAL_SERVER_ERROR.value(),
                 "error", "Database Error",
-                "message", detail != null ? detail : "Database transaction could not be completed. Please try again."
+                "message", "Database transaction could not be completed. Please try again."
         ));
     }
 
