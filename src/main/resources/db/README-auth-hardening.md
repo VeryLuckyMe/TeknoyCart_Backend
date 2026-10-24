@@ -2,7 +2,8 @@
 
 Date: 2026-10-24  
 Project: `chmtvasbhkrvydbajnd` (demo-only)  
-Branch: `fix/auth-hardening`
+Branch: `fix/auth-hardening`  
+Status: applied on 2026-10-24; verification **147/147 PASS**, `ZZ_SUMMARY` 0
 
 This is a forward-only, manual Supabase migration. The SQL editor runs as
 `postgres` and bypasses RLS, so catalog checks are necessary but not sufficient;
@@ -107,9 +108,17 @@ schema/count diagnostic, not the data backup.
    return **0 failures**. The script has 147 checks after the W0 review. The
    pre-migration baseline is **98 failures**; the other 49 checks are already
    green (RLS, publication, existing policies) and must stay green.
-4. If any check fails, run the rollback in a transaction, then restore the W0
-   export if data was affected. Do not leave a half-applied migration.
-5. After GREEN, commit the migration and run the live proof and two-device
+4. **Known repair for an earlier draft:** if only `V02`, `V21`, and `V71` fail
+   (plus the `ZZ_SUMMARY` row; actual `true` for `anon` SELECT on `my_profile`,
+   `admin_kyc_queue`, and `my_store_profile`), run
+   `patch_auth_hardening_view_grants_2026_10_24.sql`, then rerun the
+   verification. This is Supabase's default `anon` grant on newly created
+   views, not a data or RLS failure. Do not roll back for this case. The current
+   migration includes the explicit revokes, so a fresh apply does not need the
+   patch.
+5. For any other failure, run the rollback in a transaction, then restore the
+   W0 export if data was affected. Do not leave a half-applied migration.
+6. After GREEN, commit the migration and run the live proof and two-device
    Realtime smoke test.
 
 ## Ledger
@@ -139,6 +148,9 @@ Do not create a second ledger.
 - `my_profile` exposes own PII to authenticated users only.
   `public_profiles` exposes only public fields to anon/authenticated.
   `admin_kyc_queue` is gated by an active, verified, unlocked ADMIN.
+- The authenticated-only views explicitly revoke the inherited `anon`/`PUBLIC`
+  grant that Supabase applies to new public views; `public_profiles` and
+  `public_store_profiles` keep their intentional `anon` grant.
 - `store_profiles` loses table-level grants but keeps safe column `SELECT`
   (including `usual_active_hours`, `preferred_meetup_spots`,
   `welcome_message_template`) and own-row `INSERT`/`UPDATE` including
