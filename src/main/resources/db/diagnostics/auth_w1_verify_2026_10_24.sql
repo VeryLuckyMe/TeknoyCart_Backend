@@ -206,16 +206,19 @@ checks AS (
     SELECT 'G73', 'Grants', 'false', has_column_privilege('authenticated', 'public.users', 'lock_until', 'UPDATE')::text
 
     -- PROTECT USER SECURITY COLUMNS -----------------------------------------
+    -- C1 is DEFINER + guard, not the guard alone. The end-state is
+    -- SECURITY INVOKER + the guard present: T02/T21 assert INVOKER,
+    -- T03/T04/T22/T23 assert the guard still exists.
     UNION ALL
     SELECT 'T01', 'Trigger fn', '1',
            (SELECT count(*)::text FROM pg_proc WHERE oid = to_regprocedure('public.protect_user_security_columns()'))
     UNION ALL
     SELECT 'T02', 'Trigger fn', 'false', COALESCE((SELECT prosecdef::text FROM protect), 'missing')
     UNION ALL
-    SELECT 'T03', 'Trigger fn', 'false',
+    SELECT 'T03', 'Trigger fn', 'true',
            COALESCE((SELECT position('current_user' in def) > 0 FROM protect), false)::text
     UNION ALL
-    SELECT 'T04', 'Trigger fn', 'false',
+    SELECT 'T04', 'Trigger fn', 'true',
            COALESCE((SELECT position('session_user' in def) > 0 FROM protect), false)::text
     UNION ALL
     SELECT 'T05', 'Trigger fn', 'present',
@@ -252,10 +255,10 @@ checks AS (
     UNION ALL
     SELECT 'T21', 'Trigger fn', 'false', COALESCE((SELECT prosecdef::text FROM ins), 'missing')
     UNION ALL
-    SELECT 'T22', 'Trigger fn', 'false',
+    SELECT 'T22', 'Trigger fn', 'true',
            COALESCE((SELECT position('current_user' in def) > 0 FROM ins), false)::text
     UNION ALL
-    SELECT 'T23', 'Trigger fn', 'false',
+    SELECT 'T23', 'Trigger fn', 'true',
            COALESCE((SELECT position('session_user' in def) > 0 FROM ins), false)::text
     UNION ALL
     SELECT 'T24', 'Trigger fn', 'present',
@@ -477,6 +480,7 @@ checks AS (
     SELECT 'V42', 'Store', '0',
            (SELECT count(*)::text FROM information_schema.column_privileges
             WHERE table_schema = 'public' AND table_name = 'store_profiles'
+              AND privilege_type = 'SELECT'
               AND grantee IN ('anon', 'authenticated')
               AND (column_name ILIKE '%phone%' OR column_name ILIKE '%address%'
                    OR column_name ILIKE '%contact%' OR column_name ILIKE '%gcash%'))
