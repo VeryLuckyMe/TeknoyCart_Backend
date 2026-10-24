@@ -247,6 +247,9 @@ checks AS (
     UNION ALL
     SELECT 'T13', 'Trigger fn', 'present',
            CASE WHEN (SELECT def FROM protect) LIKE '%NEW.lock_until%' THEN 'present' ELSE 'missing' END
+    UNION ALL
+    SELECT 'T14', 'Trigger fn', 'present',
+           CASE WHEN (SELECT def FROM protect) LIKE '%token_expires_at%' THEN 'present' ELSE 'missing' END
 
     -- ENFORCE ROLE ON INSERT ------------------------------------------------
     UNION ALL
@@ -290,6 +293,9 @@ checks AS (
     UNION ALL
     SELECT 'T33', 'Trigger fn', 'present',
            CASE WHEN (SELECT def FROM ins) LIKE '%lock_until%' THEN 'present' ELSE 'missing' END
+    UNION ALL
+    SELECT 'T34', 'Trigger fn', 'present',
+           CASE WHEN (SELECT def FROM ins) LIKE '%token_expires_at%' THEN 'present' ELSE 'missing' END
 
     -- TRIGGERS --------------------------------------------------------------
     UNION ALL
@@ -346,6 +352,18 @@ checks AS (
            CASE WHEN COALESCE((SELECT with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = 'seller_verifications' AND policyname = 'Users can submit own verification'), '') LIKE '%PENDING%'
                   AND COALESCE((SELECT with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = 'seller_verifications' AND policyname = 'Users can submit own verification'), '') NOT LIKE '%APPROVED%'
                 THEN 'present' ELSE 'missing' END
+    UNION ALL
+    -- A legacy ALL/USING(true) policy would OR past the user-only KYC policies
+    -- and let any client self-approve. The admin ALL policy must carry an
+    -- ADMIN/service_role predicate, not a bare true.
+    SELECT 'P22', 'Policies', 'false',
+           EXISTS (
+             SELECT 1 FROM pg_policies
+             WHERE schemaname = 'public' AND tablename = 'seller_verifications'
+               AND cmd = 'ALL'
+               AND roles::text LIKE '%public%'
+               AND (COALESCE(qual, '') = 'true' OR COALESCE(with_check, '') = 'true')
+           )::text
 
     -- ADMIN FUNCTION --------------------------------------------------------
     UNION ALL
