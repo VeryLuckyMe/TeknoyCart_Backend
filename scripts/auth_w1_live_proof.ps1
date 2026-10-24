@@ -32,6 +32,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Net.Http
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function ConvertTo-PlainText {
@@ -151,12 +152,12 @@ function Get-Token {
 
 function Get-JsonArray {
     param([string]$Text)
-    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    if ([string]::IsNullOrWhiteSpace($Text)) { return ,@() }
     try {
         $value = $Text | ConvertFrom-Json
-        return @($value)
+        return ,@($value)
     } catch {
-        return @()
+        return ,@()
     }
 }
 
