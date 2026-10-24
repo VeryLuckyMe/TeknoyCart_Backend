@@ -64,10 +64,29 @@ live ADMIN rows and confirm the buyer, approved seller, and pending seller
 credentials. Do not put passwords in the repo or in chat.
 
 ```sql
+-- Admin candidates (both live admins are verified/unlocked in W0)
 SELECT user_id, email, role, is_verified, is_seller_verified, is_locked
 FROM public.users
-WHERE role = 'ADMIN' OR is_seller_verified = true
-ORDER BY role, email;
+WHERE role = 'ADMIN'
+ORDER BY email;
+
+-- Approved-seller candidates (role SELLER + is_seller_verified = true)
+SELECT user_id, email, role, is_verified, is_seller_verified, is_locked
+FROM public.users
+WHERE role = 'SELLER' AND is_seller_verified = true
+ORDER BY email;
+
+-- Pending-seller candidates (role SELLER + is_seller_verified = false)
+SELECT user_id, email, role, is_verified, is_seller_verified, is_locked
+FROM public.users
+WHERE role = 'SELLER' AND is_seller_verified = false
+ORDER BY email;
+
+-- Buyer candidates
+SELECT user_id, email, role, is_verified, is_seller_verified, is_locked
+FROM public.users
+WHERE role = 'BUYER'
+ORDER BY email;
 ```
 
 ### Data export
