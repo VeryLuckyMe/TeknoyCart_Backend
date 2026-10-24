@@ -68,6 +68,9 @@ $pendingEmail = Read-Value 'Pending seller email' $env:W1_PENDING_EMAIL
 $pendingPassword = Read-Value 'Pending seller password' $env:W1_PENDING_PASSWORD -Secret
 $adminEmail = $env:W1_ADMIN_EMAIL
 $adminPassword = $env:W1_ADMIN_PASSWORD
+if (-not [string]::IsNullOrWhiteSpace($adminEmail) -and [string]::IsNullOrWhiteSpace($adminPassword)) {
+    $adminPassword = Read-Value 'Admin password' '' -Secret
+}
 
 $client = [System.Net.Http.HttpClient]::new()
 $client.Timeout = [TimeSpan]::FromSeconds(30)
