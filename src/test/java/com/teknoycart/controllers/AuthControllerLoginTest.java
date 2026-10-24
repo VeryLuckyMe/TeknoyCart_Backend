@@ -57,6 +57,20 @@ public class AuthControllerLoginTest {
     }
 
     @Test
+    @DisplayName("Registration rejects a password shorter than 12 characters")
+    void testRegisterRejectsShortPassword() {
+        User user = new User();
+        user.setEmail("new.student@cit.edu");
+        user.setFullName("New Student");
+        user.setPasswordHash("short");
+
+        ResponseEntity<?> response = authController.registerUser(user);
+
+        assertEquals(400, response.getStatusCode().value());
+        assertEquals("Error: Password must be at least 12 characters.", response.getBody());
+    }
+
+    @Test
     @DisplayName("Anti-enumeration: Unknown email returns generic INVALID_CREDENTIALS")
     void testUnknownEmailReturnsGenericError() {
         ResponseEntity<?> response = authController.authenticateUser(Map.of(

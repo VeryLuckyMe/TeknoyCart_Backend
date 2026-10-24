@@ -43,6 +43,11 @@ public class AuthController {
             return ResponseEntity.badRequest().body("Error: Full name, institutional email, and password are mandatory.");
         }
 
+        // Demo password policy (D17): 12+ characters, no composition rules.
+        if (user.getPasswordHash().trim().length() < 12) {
+            return ResponseEntity.badRequest().body("Error: Password must be at least 12 characters.");
+        }
+
         String email = user.getEmail().toLowerCase().trim();
         if (!email.endsWith("@cit.edu")) {
             return ResponseEntity.badRequest()
