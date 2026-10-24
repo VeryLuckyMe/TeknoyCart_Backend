@@ -1,6 +1,11 @@
 -- ==============================================================================
 -- TeknoyCart: Comprehensive Row Level Security (RLS) Lockdown
 -- Remediates: [CRIT-02] Database Row Level Security Disabled
+--
+-- HISTORICAL / V2 LEDGER: DatabaseMigrationRunner reads this file from the
+-- classpath at startup and skips it once the ledger records V2. Do not re-run
+-- it manually after migration_auth_hardening_2026_10_24.sql: the W1 migration
+-- is the current auth/RLS state and must apply after V2/P6.
 -- ==============================================================================
 
 -- 1. Enable RLS on all tables
