@@ -202,44 +202,53 @@ historical.
 - Web `Moderation.jsx`: reads `admin_kyc_queue` for email/student_id.
 - Web `Dashboard.jsx` / `Inventory.jsx` only read granted `users` columns; the
   admin product-add path is intentionally outside the demo story because the
-  W1 product policy requires an approved seller as the row owner.\n- Backend `/auth/register` rejects passwords shorter than 12 characters. The\n  endpoint is legacy and slated for removal in W3; this keeps the policy\n  server-side in the meantime.
+  W1 product policy requires an approved seller as the row owner.
+- Backend `/auth/register` rejects passwords shorter than 12 characters. The
+  endpoint is legacy and slated for removal in W3; this keeps the policy
+  server-side in the meantime.
 - Password minimum is 12 in signup, reset sheets, and the Supabase dashboard.
 - Registration has an explicit consent checkbox that opens the shared
   Terms/Privacy sheet. Consent persistence is post-demo.
 
 ## Live escalation proof (after GREEN)
 
-Use a real test user through PostgREST, or in the SQL editor:
+Run `scripts/auth_w1_live_proof.ps1` from the backend root with real Supabase
+Auth sessions. It uses PostgREST, so `session_user` is the PostgREST
+authenticator and the C1 trigger guard is exercised.
 
-```sql
-BEGIN;
-SELECT set_config('request.jwt.claim.sub', '<test-user-uuid>', true);
-SELECT set_config('request.jwt.claim.role', 'authenticated', true);
-SELECT set_config('request.jwt.claims',
-  '{"sub":"<test-user-uuid>","role":"authenticated","email":"<test-email>"}', true);
-SET LOCAL ROLE authenticated;
--- run the checks
-ROLLBACK;
+Do **not** use `SET LOCAL ROLE authenticated` in the SQL editor for the
+trigger-guard checks: the SQL editor's `session_user` remains `postgres`, which
+makes the guard return early. The SQL editor is still correct for the catalog
+verification.
+
+Set the non-secret values, then run the script; it prompts for any missing
+passwords and never prints them:
+
+```powershell
+$env:SUPABASE_URL = "https://chmtvasbhkrvydbajnd.supabase.co"
+$env:SUPABASE_ANON_KEY = "<anon-key>"
+$env:W1_BUYER_EMAIL = "liam@cit.edu"
+$env:W1_SELLER_EMAIL = "harveyrodchristian.valmera@cit.edu"
+$env:W1_PENDING_EMAIL = "clark.kent@cit.edu"
+# Optional: $env:W1_ADMIN_EMAIL = "admin@cit.edu"
+.\scripts\auth_w1_live_proof.ps1
 ```
 
-Verify at minimum:
+The script checks:
 
-- `SELECT * FROM public.users` fails with a column-permission error; a
-  `SELECT user_id, full_name, role, is_seller_verified, last_seen_at` succeeds.
-  `email`, `student_id`, `contact`, `gcash_number`, `password_hash`,
-  `is_verified`, `is_locked`, `verification_token` are denied.
-- `SELECT * FROM public.my_profile` returns exactly the caller's row.
-- `SELECT * FROM public.public_profiles` returns only public fields.
-- `SELECT contact_number FROM public.store_profiles` is denied; the owner's
-  `my_store_profile` returns the own row; `public_store_profiles` has no contact.
-- A non-admin gets 0 rows from `admin_kyc_queue`.
-- A buyer / pending seller cannot insert a product; an approved seller can.
-- A user cannot update `users.role` / `is_verified` / `is_seller_verified` /
-  `password_hash` / `is_locked`; the backend (JDBC) and `admin_verify_seller`
-  still can.
-- A user cannot set their own `seller_verifications.status` to `APPROVED`; the
-  admin RPC can approve.
-- `is_student_id_available` returns a boolean and does not expose another row.
+- buyer `users.email` denied; safe `users` columns and `my_profile` allowed;
+- buyer `PATCH role=ADMIN` and `POST role=ADMIN` denied, role unchanged;
+- anon `users.email` denied; `public_profiles` and `public_store_profiles`
+  allowed;
+- anon `my_profile`, `admin_kyc_queue`, and `my_store_profile` denied;
+- buyer `store_profiles.contact_number` denied;
+- buyer/pending seller product insert denied; approved seller insert allowed;
+- buyer gets 0 `admin_kyc_queue` rows; admin gets the queue;
+- pending seller cannot set own `seller_verifications.status` to `APPROVED`.
+
+Every row must read PASS. The script creates a temporary seller product and
+deletes it. If a denied write unexpectedly succeeds, the result prints the row
+id to delete via the SQL editor. Do not put passwords in the repo or in chat.
 
 Then run the two-device Realtime smoke test (buyer + seller chat + presence).
 A broken subscription blocks the migration.
