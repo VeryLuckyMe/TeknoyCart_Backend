@@ -41,13 +41,13 @@ public class User {
     private int failedAttempts = 0;
 
     @Column(name = "lock_until")
-    private LocalDateTime lockUntil;
+    private java.time.Instant lockUntil;
 
     @Column(name = "verification_token")
     private String verificationToken;
 
     @Column(name = "token_expires_at")
-    private LocalDateTime tokenExpiresAt;
+    private java.time.Instant tokenExpiresAt;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -136,11 +136,11 @@ public class User {
         this.failedAttempts = failedAttempts;
     }
 
-    public LocalDateTime getLockUntil() {
+    public java.time.Instant getLockUntil() {
         return lockUntil;
     }
 
-    public void setLockUntil(LocalDateTime lockUntil) {
+    public void setLockUntil(java.time.Instant lockUntil) {
         this.lockUntil = lockUntil;
     }
 
@@ -152,11 +152,11 @@ public class User {
         this.verificationToken = verificationToken;
     }
 
-    public LocalDateTime getTokenExpiresAt() {
+    public java.time.Instant getTokenExpiresAt() {
         return tokenExpiresAt;
     }
 
-    public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) {
+    public void setTokenExpiresAt(java.time.Instant tokenExpiresAt) {
         this.tokenExpiresAt = tokenExpiresAt;
     }
 

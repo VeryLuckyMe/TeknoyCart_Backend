@@ -159,7 +159,7 @@ public class SellerUpgradeTest {
         user.setRole("BUYER");
         user.setVerified(true);
         user.setLocked(true);
-        user.setLockUntil(LocalDateTime.now(ZoneId.of("UTC")).plusHours(1));
+        user.setLockUntil(java.time.Instant.now().plus(java.time.Duration.ofHours(1)));
         user = userRepository.save(user);
 
         authenticateAs(user);

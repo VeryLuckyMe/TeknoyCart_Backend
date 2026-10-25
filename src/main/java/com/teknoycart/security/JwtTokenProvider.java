@@ -31,33 +31,26 @@ public class JwtTokenProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtTokenProvider.class);
 
-    @Value("${supabase.jwks.url:https://chmtvasbhkbrvydbajnd.supabase.co/auth/v1/.well-known/jwks.json}")
+    @Value("${supabase.url:}")
+    private String supabaseUrl;
+
+    @Value("${supabase.jwks.url:}")
     private String jwksUrl;
 
-    @Value("${supabase.issuer:https://chmtvasbhkbrvydbajnd.supabase.co/auth/v1}")
+    @Value("${supabase.issuer:}")
     private String expectedIssuer;
 
     @Value("${jwt.secret:}")
     private String jwtSecret;
 
-    @Value("${jwt.expiration:86400000}")
+    @Value("${jwt.expiration:3600000}")
     private long jwtExpirationMs;
 
-    private volatile javax.crypto.SecretKey runtimeFallbackKey;
-
     private javax.crypto.SecretKey getSigningKey() {
-        if (jwtSecret != null && !jwtSecret.isBlank() && jwtSecret.getBytes(StandardCharsets.UTF_8).length >= 32) {
-            return io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT_SECRET must contain at least 32 bytes");
         }
-        if (runtimeFallbackKey == null) {
-            synchronized (this) {
-                if (runtimeFallbackKey == null) {
-                    logger.warn("JWT_SECRET environment variable is not configured or shorter than 256 bits. Using an ephemeral in-memory 256-bit secret key.");
-                    runtimeFallbackKey = io.jsonwebtoken.security.Keys.secretKeyFor(SignatureAlgorithm.HS256);
-                }
-            }
-        }
-        return runtimeFallbackKey;
+        return io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     private final ConcurrentHashMap<String, PublicKey> keyCache = new ConcurrentHashMap<>();
@@ -104,6 +97,15 @@ public class JwtTokenProvider {
 
     @PostConstruct
     public void init() {
+        if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT_SECRET must be configured with at least 32 bytes");
+        }
+        if (supabaseUrl == null || supabaseUrl.isBlank()) {
+            throw new IllegalStateException("SUPABASE_URL must be configured");
+        }
+        String base = supabaseUrl.trim().replaceAll("/+$", "");
+        if (expectedIssuer == null || expectedIssuer.isBlank()) expectedIssuer = base + "/auth/v1";
+        if (jwksUrl == null || jwksUrl.isBlank()) jwksUrl = base + "/auth/v1/.well-known/jwks.json";
         seedKnownFallbackKey();
         refreshPublicKey();
     }

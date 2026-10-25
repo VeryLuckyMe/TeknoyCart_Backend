@@ -8,10 +8,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.util.Base64;
 
 @RestController
 @RequestMapping("/auth")
@@ -29,84 +39,23 @@ public class AuthController {
     @Autowired
     private EmailService emailService;
 
+    @org.springframework.beans.factory.annotation.Value("${jwt.secret:}")
+    private String verificationTokenSecret;
+
     @Autowired(required = false)
     private com.teknoycart.repositories.NotificationRepository notificationRepository;
 
     @Autowired(required = false)
     private com.teknoycart.services.PushNotificationService pushNotificationService;
 
-    @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@RequestBody User user) {
-        if (user == null || user.getEmail() == null || user.getEmail().trim().isEmpty()
-                || user.getPasswordHash() == null || user.getPasswordHash().trim().isEmpty()
-                || user.getFullName() == null || user.getFullName().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Error: Full name, institutional email, and password are mandatory.");
-        }
-
-        String email = user.getEmail().toLowerCase().trim();
-        if (!email.endsWith("@cit.edu")) {
-            return ResponseEntity.badRequest()
-                    .body("Registration restricted to official Cebu Institute of Technology - University accounts.");
-        }
-
-        if (userRepository.findByEmail(email).isPresent()) {
-            return ResponseEntity.badRequest().body("Error: Email is already in use!");
-        }
-
-        // Restrict role: only BUYER or SELLER can be registered publicly. Never allow ADMIN.
-        String requestedRole = (user.getRole() != null && "SELLER".equalsIgnoreCase(user.getRole())) ? "SELLER" : "BUYER";
-        user.setRole(requestedRole);
-
-        if ("SELLER".equals(requestedRole)) {
-            if (user.getStoreName() == null || user.getStoreName().trim().isEmpty()) {
-                return ResponseEntity.badRequest().body("Error: Store Name is mandatory for seller registration.");
-            }
-            if (storeRepository.findByStoreName(user.getStoreName().trim()).isPresent()) {
-                return ResponseEntity.badRequest().body("Error: Store Name is already in use.");
-            }
-        }
-
-        // Force security reset: prevent mass assignment tampering
-        user.setUserId(null); // Ensure auto-generated ID
-        user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
-        user.setEmail(email);
-        user.setVerified(false); // Force all accounts to verify email before logging in
-        user.setSellerVerified(false); // Strict Ponytail Audit: never verified at registration
-        user.setLocked(false);
-        user.setFailedAttempts(0);
-        user.setLockUntil(null);
-
-        // Generate dynamic verification token with 5-minute expiration
-        String token = UUID.randomUUID().toString();
-        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(5);
-        user.setVerificationToken(token);
-        user.setTokenExpiresAt(expiresAt);
-
-        User savedUser = userRepository.save(user);
-
-        if ("SELLER".equals(savedUser.getRole())) {
-            String storeName = user.getStoreName() != null ? user.getStoreName().trim() : "";
-            if (storeName.isEmpty()) {
-                storeName = savedUser.getFullName() != null ? savedUser.getFullName() + "'s Store" : "Store";
-            }
-            com.teknoycart.models.Store store = new com.teknoycart.models.Store();
-            store.setStoreName(storeName);
-            store.setOwner(savedUser);
-            String storeSlug = storeName.toLowerCase().replaceAll("\\s+", "");
-            store.setPublicSupportEmail("support." + storeSlug + "@cit.edu");
-            storeRepository.save(store);
-        }
-
-        // Send HTML verification email via Brevo / SMTP
-        emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), token);
-
-        return ResponseEntity
-                .ok("Registration successful! A verification email has been sent to your Outlook account.");
-    }
-
     @PostMapping("/send-verification")
-    public ResponseEntity<?> sendVerificationEmail(@RequestParam("email") String email,
-            @RequestParam("fullName") String fullName) {
+    public ResponseEntity<?> sendVerificationEmail(
+            @RequestBody(required = false) Map<String, String> body,
+            @RequestParam(value = "email", required = false) String emailParam,
+            @RequestParam(value = "fullName", required = false) String fullNameParam) {
+        String email = (body != null && body.containsKey("email")) ? body.get("email") : emailParam;
+        String requestedName = (body != null && body.containsKey("fullName")) ? body.get("fullName") : fullNameParam;
+
         if (email == null || email.trim().isEmpty()) {
             return ResponseEntity.badRequest().body("Error: Email is required.");
         }
@@ -118,33 +67,69 @@ public class AuthController {
         }
 
         User user = userOpt.get();
+        Instant now = Instant.now();
 
-        // Rate limiting cooldown: block re-sending within 60 seconds
-        if (user.getTokenExpiresAt() != null && LocalDateTime.now().isBefore(user.getTokenExpiresAt().minusMinutes(4))) {
+        Instant expiresAt = user.getTokenExpiresAt();
+        boolean reusableToken = expiresAt != null && now.isBefore(expiresAt);
+        // Rate limiting cooldown: block re-sending within 60 seconds.
+        if (reusableToken && now.isBefore(expiresAt.minus(Duration.ofMinutes(14)))) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
                     "type", "RATE_LIMITED",
                     "message", "Please wait at least 60 seconds before requesting a new verification email."
             ));
         }
 
-        String token = UUID.randomUUID().toString();
-        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(5);
-        user.setVerificationToken(token);
+        if (!reusableToken) {
+            expiresAt = Instant.ofEpochSecond(now.plus(Duration.ofMinutes(15)).getEpochSecond());
+        }
+        String existingToken = user.getVerificationToken();
+        String token = reusableToken && existingToken != null && !isSha256Hash(existingToken)
+                ? existingToken
+                : createVerificationToken(user.getUserId(), expiresAt);
+        user.setVerificationToken(hashVerificationToken(token));
         user.setTokenExpiresAt(expiresAt);
         userRepository.save(user);
 
-        emailService.sendVerificationEmail(user.getEmail(), user.getFullName(), token);
-        return ResponseEntity.ok(Map.of(
-                "message", "Verification email sent successfully!",
-                "expiresAt", expiresAt.toString()));
+        String fullName = (user.getFullName() != null && !user.getFullName().trim().isEmpty())
+                ? user.getFullName()
+                : (requestedName != null ? requestedName : "Student");
+
+        try {
+            boolean sent = emailService.sendVerificationEmail(user.getEmail(), fullName, token)
+                    .get(15, TimeUnit.SECONDS);
+            if (sent) {
+                return ResponseEntity.ok(Map.of(
+                        "message", "Verification email sent successfully!",
+                        "expiresAt", expiresAt.toString()));
+            }
+        } catch (TimeoutException e) {
+            logger.warn("Verification email dispatch timed out");
+        } catch (Exception e) {
+            logger.error("Verification email dispatch failed", e);
+        }
+
+        // A failed dispatch must not leave a valid link that the user never received.
+        if (!reusableToken) {
+            user.setVerificationToken(null);
+            user.setTokenExpiresAt(null);
+            userRepository.save(user);
+        }
+        return ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "type", "EMAIL_DELIVERY_FAILED",
+                        "message", "Verification email could not be sent. Please try again later."));
     }
 
     @GetMapping("/verify")
     public ResponseEntity<String> verifyUser(@RequestParam("token") String token) {
-        Optional<User> userOpt = userRepository.findByVerificationToken(token);
+        Optional<User> userOpt = userRepository.findByVerificationToken(hashVerificationToken(token));
+        // Accept previously issued plaintext tokens during the one-time migration window.
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findByVerificationToken(token);
+        }
 
         if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest()
+            return ResponseEntity.status(org.springframework.http.HttpStatus.GONE)
                     .body("<html><body style=\"font-family: Arial; text-align: center; margin-top: 100px;\">"
                             + "<h2 style=\"color: red;\">Invalid Verification Link</h2>"
                             + "<p>This verification link is invalid or has already expired.</p>"
@@ -154,13 +139,13 @@ public class AuthController {
         User user = userOpt.get();
 
         // Check if token has expired
-        if (user.getTokenExpiresAt() != null && LocalDateTime.now().isAfter(user.getTokenExpiresAt())) {
-            return ResponseEntity.badRequest()
+        if (user.getTokenExpiresAt() != null && Instant.now().isAfter(user.getTokenExpiresAt())) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.GONE)
                     .body("<html><body style=\"font-family: 'Segoe UI', Arial, sans-serif; text-align: center; margin-top: 80px; background-color: #FAFAFA;\">"
                             + "<div style=\"max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #ECECEF; border-radius: 16px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.08);\">"
                             + "<h2 style=\"color: #E65100;\">⏱️ Verification Link Expired</h2>"
                             + "<p style=\"color: #555; font-size: 15px; line-height: 1.6;\">This verification link has expired. Please go back to the TeknoyCart app and request a new verification email.</p>"
-                            + "<p style=\"color: #888; font-size: 12px; margin-top: 24px;\">Verification links are valid for 5 minutes for security purposes.</p>"
+                            + "<p style=\"color: #888; font-size: 12px; margin-top: 24px;\">Verification links are valid for 15 minutes for security purposes.</p>"
                             + "</div>"
                             + "</body></html>");
         }
@@ -185,14 +170,33 @@ public class AuthController {
                         + "</body></html>");
     }
 
-    @GetMapping("/check-verification")
-    public ResponseEntity<?> checkVerificationStatus(@RequestParam("email") String email) {
-        String trimmedEmail = email.toLowerCase().trim();
-        Optional<User> userOpt = userRepository.findByEmail(trimmedEmail);
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.ok(Map.of("verified", false));
+    private String hashVerificationToken(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
         }
-        return ResponseEntity.ok(Map.of("verified", userOpt.get().isVerified()));
+    }
+
+    private String createVerificationToken(UUID userId, Instant expiresAt) {
+        if (verificationTokenSecret == null
+                || verificationTokenSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT_SECRET must contain at least 32 bytes to issue verification links");
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(verificationTokenSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] token = mac.doFinal((userId + ":" + expiresAt.getEpochSecond()).getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(token);
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException("Unable to create verification token", e);
+        }
+    }
+
+    private boolean isSha256Hash(String value) {
+        return value.matches("[0-9a-fA-F]{64}");
     }
 
     private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AuthController.class);
@@ -305,12 +309,10 @@ public class AuthController {
         User user = userOpt.get();
 
         // 1. Check account lockout state
+        Instant now = Instant.now();
         if (user.isLocked()) {
-            if (user.getLockUntil() != null
-                    && LocalDateTime.now(java.time.ZoneId.of("UTC")).isBefore(user.getLockUntil())) {
-                long remainingSeconds = Math.max(0, java.time.Duration.between(
-                        LocalDateTime.now(java.time.ZoneId.of("UTC")), user.getLockUntil()
-                ).getSeconds());
+            if (user.getLockUntil() != null && now.isBefore(user.getLockUntil())) {
+                long remainingSeconds = Math.max(0, Duration.between(now, user.getLockUntil()).getSeconds());
                 long remainingMinutes = (remainingSeconds / 60) + 1;
                 return ResponseEntity.status(403).body(Map.of(
                         "type", "ACCOUNT_LOCKED",
@@ -327,17 +329,7 @@ public class AuthController {
             }
         }
 
-        // 2. Enforce Email Verification Guard
-        if (!user.isVerified()) {
-            return ResponseEntity.status(403).body(Map.of(
-                    "type", "EMAIL_UNVERIFIED",
-                    "message", "Your account email has not been verified yet. Please check your Outlook inbox.",
-                    "email", user.getEmail(),
-                    "fullName", user.getFullName() != null ? user.getFullName() : "Student"
-            ));
-        }
-
-        // 3. Validate Password: Check Supabase GoTrue first (single source of truth)
+        // 2. Validate Password FIRST before checking verification status (prevents user enumeration & info leak - H2)
         boolean authenticated = false;
         Map<String, Object> supabaseSession = authenticateWithSupabase(email, password);
 
@@ -356,7 +348,7 @@ public class AuthController {
             user.setFailedAttempts(attempts);
 
             if (attempts >= 5) {
-                LocalDateTime lockUntil = LocalDateTime.now(java.time.ZoneId.of("UTC")).plusMinutes(10);
+                Instant lockUntil = Instant.now().plus(Duration.ofMinutes(10));
                 user.setLocked(true);
                 user.setLockUntil(lockUntil);
                 userRepository.save(user);
@@ -380,22 +372,32 @@ public class AuthController {
             return ResponseEntity.badRequest().body(err);
         }
 
-        // 4. Successful login: reset failed attempts & lockout state
+        // 3. Password verified successfully: reset failed attempts & lockout state
         user.setFailedAttempts(0);
         user.setLocked(false);
         user.setLockUntil(null);
         userRepository.save(user);
 
-        // Generate stateless JWT session token signed using HMAC SHA-256
-        String token = null;
-        try {
-            token = tokenProvider.generateToken(user.getUserId(), user.getEmail(), user.getRole());
-        } catch (Exception e) {
-            logger.error("Error generating session JWT token: {}", e.getMessage(), e);
+        // 4. Enforce Email Verification Guard ONLY after password is authenticated
+        if (!user.isVerified()) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "type", "EMAIL_UNVERIFIED",
+                    "message", "Your account email has not been verified yet. Please check your Outlook inbox.",
+                    "email", user.getEmail()
+                    // fullName omitted to prevent account discovery (Finding H2)
+            ));
         }
 
-        if (token == null && supabaseSession != null && supabaseSession.get("access_token") != null) {
+        // 5. Successful login: Return Supabase token / session
+        String token = null;
+        if (supabaseSession != null && supabaseSession.get("access_token") != null) {
             token = supabaseSession.get("access_token").toString();
+        } else {
+            try {
+                token = tokenProvider.generateToken(user.getUserId(), user.getEmail(), user.getRole());
+            } catch (Exception e) {
+                logger.error("Error generating session JWT token: {}", e.getMessage(), e);
+            }
         }
 
         // Build sanitized user map without sensitive security hashes/tokens
