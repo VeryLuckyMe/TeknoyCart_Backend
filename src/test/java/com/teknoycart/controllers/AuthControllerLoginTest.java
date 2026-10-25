@@ -19,9 +19,14 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.concurrent.CompletableFuture;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
+import static org.mockito.Mockito.when;
 
 @DataJpaTest
 @Import({AuthController.class, BCryptPasswordEncoder.class})
@@ -30,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.*;
     "spring.jpa.hibernate.ddl-auto=create-drop",
     "spring.jpa.show-sql=false",
     "supabase.url=https://mock.supabase.co",
-    "supabase.anon-key=mock_key"
+    "supabase.anon-key=mock_key",
+    "jwt.secret=TEST_ONLY_JWT_SECRET_KEY_FOR_AUTH_TESTING_MINIMUM_256_BITS"
 })
 public class AuthControllerLoginTest {
 
@@ -57,17 +63,50 @@ public class AuthControllerLoginTest {
     }
 
     @Test
-    @DisplayName("Registration rejects a password shorter than 12 characters")
-    void testRegisterRejectsShortPassword() {
+    @DisplayName("Verification provider failure is reported instead of claiming the email was sent")
+    void verificationEmailFailureReturnsServiceUnavailable() {
         User user = new User();
-        user.setEmail("new.student@cit.edu");
+        user.setEmail("new@cit.edu");
         user.setFullName("New Student");
-        user.setPasswordHash("short");
+        user.setPasswordHash("SUPABASE_AUTH_MANAGED");
+        user.setRole("BUYER");
+        userRepository.save(user);
+        when(emailService.sendVerificationEmail(eq("new@cit.edu"), anyString(), anyString()))
+            .thenReturn(CompletableFuture.completedFuture(false));
 
-        ResponseEntity<?> response = authController.registerUser(user);
+        ResponseEntity<?> response = authController.sendVerificationEmail(
+            Map.of("email", "new@cit.edu"), null, null);
 
-        assertEquals(400, response.getStatusCode().value());
-        assertEquals("Error: Password must be at least 12 characters.", response.getBody());
+        assertEquals(503, response.getStatusCode().value());
+        assertEquals("EMAIL_DELIVERY_FAILED", ((Map<?, ?>) response.getBody()).get("type"));
+        assertNull(userRepository.findByEmail("new@cit.edu").orElseThrow().getVerificationToken());
+    }
+
+    @Test
+    @DisplayName("Verification token is hashed at rest and the emailed token verifies the account")
+    void verificationTokenIsHashedAndCanVerify() {
+        User user = new User();
+        user.setEmail("verified@cit.edu");
+        user.setFullName("Verified Student");
+        user.setPasswordHash("SUPABASE_AUTH_MANAGED");
+        user.setRole("BUYER");
+        userRepository.save(user);
+        var tokenCaptor = forClass(String.class);
+        when(emailService.sendVerificationEmail(eq("verified@cit.edu"), anyString(), tokenCaptor.capture()))
+            .thenReturn(CompletableFuture.completedFuture(true));
+
+        ResponseEntity<?> sent = authController.sendVerificationEmail(
+            Map.of("email", "verified@cit.edu"), null, null);
+
+        assertEquals(200, sent.getStatusCode().value());
+        String rawToken = tokenCaptor.getValue();
+        assertNotEquals(rawToken,
+            userRepository.findByEmail("verified@cit.edu").orElseThrow().getVerificationToken());
+
+        ResponseEntity<String> verified = authController.verifyUser(rawToken);
+
+        assertEquals(200, verified.getStatusCode().value());
+        assertTrue(userRepository.findByEmail("verified@cit.edu").orElseThrow().isVerified());
     }
 
     @Test
@@ -85,8 +124,8 @@ public class AuthControllerLoginTest {
     }
 
     @Test
-    @DisplayName("Unverified email returns 403 EMAIL_UNVERIFIED with email & fullName for resend UX")
-    void testUnverifiedUserReturns403() {
+    @DisplayName("Unverified email with correct password returns 403 EMAIL_UNVERIFIED without fullName leak")
+    void testUnverifiedUserWithCorrectPasswordReturns403() {
         User user = new User();
         user.setEmail("unverified@cit.edu");
         user.setFullName("Juan Dela Cruz");
@@ -104,7 +143,29 @@ public class AuthControllerLoginTest {
         Map<?, ?> body = (Map<?, ?>) response.getBody();
         assertEquals("EMAIL_UNVERIFIED", body.get("type"));
         assertEquals("unverified@cit.edu", body.get("email"));
-        assertEquals("Juan Dela Cruz", body.get("fullName"));
+        assertNull(body.get("fullName"), "fullName must not be leaked to clients");
+    }
+
+    @Test
+    @DisplayName("Unverified email with wrong password returns 400 INVALID_CREDENTIALS (anti-enumeration)")
+    void testUnverifiedUserWithWrongPasswordReturnsGenericError() {
+        User user = new User();
+        user.setEmail("unverified2@cit.edu");
+        user.setFullName("Juan Dela Cruz");
+        user.setPasswordHash(passwordEncoder.encode("correct_pass"));
+        user.setVerified(false);
+        user.setRole("BUYER");
+        userRepository.save(user);
+
+        ResponseEntity<?> response = authController.authenticateUser(Map.of(
+            "email", "unverified2@cit.edu",
+            "password", "wrong_pass"
+        ));
+
+        assertEquals(400, response.getStatusCode().value());
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertEquals("INVALID_CREDENTIALS", body.get("type"));
+        assertNull(body.get("fullName"));
     }
 
     @Test
@@ -147,6 +208,8 @@ public class AuthControllerLoginTest {
         assertEquals(403, response5.getStatusCode().value());
         Map<?, ?> body5 = (Map<?, ?>) response5.getBody();
         assertEquals("ACCOUNT_LOCKED", body5.get("type"));
+        assertNotNull(body5.get("lockUntil"));
+        assertTrue(body5.get("lockUntil").toString().endsWith("Z"), "lockUntil must be ISO-8601 UTC with trailing Z");
 
         User lockedUser = userRepository.findByEmail("student@cit.edu").orElseThrow();
         assertEquals(5, lockedUser.getFailedAttempts());
@@ -176,7 +239,7 @@ public class AuthControllerLoginTest {
         user.setFailedAttempts(5);
         user.setLocked(true);
         // Lock expired 5 minutes ago
-        user.setLockUntil(LocalDateTime.now(ZoneId.of("UTC")).minusMinutes(5));
+        user.setLockUntil(java.time.Instant.now().minus(java.time.Duration.ofMinutes(5)));
         userRepository.save(user);
 
         // Attempt with wrong pass: should reset lock, then increment attempts to 1

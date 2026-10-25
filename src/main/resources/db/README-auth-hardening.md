@@ -20,6 +20,12 @@ run the live escalation proof below with a real user or
 - Supabase Auth **Confirm email** is **disabled**. The mobile app uses the
   backend SMTP verification flow and requires `signUp()` to return a session;
   otherwise it fails with an explicit error before writing `public.users`.
+- Backend `JWT_SECRET` is configured with at least 32 bytes and is persisted
+  across deploys. Backend startup now fails when it is missing or too short;
+  do not paste the value into this repository or chat.
+- Supabase Auth redirect allowlist includes `teknoycart://login-callback` for
+  mobile password recovery. Confirm the web recovery redirect separately if
+  the web client is enabled.
 - `store_profiles.seller_id` has a unique constraint. The app uses
   `upsert(..., onConflict: 'seller_id')`; without the constraint PostgREST
   rejects the upsert. The live table is expected to have it from

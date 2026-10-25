@@ -24,6 +24,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private JwtTokenProvider tokenProvider;
 
+    @Autowired(required = false)
+    private com.teknoycart.repositories.UserRepository userRepository;
+
+    private static class CachedUserStatus {
+        final boolean verified;
+        final boolean locked;
+        final long cachedAt;
+
+        CachedUserStatus(boolean verified, boolean locked) {
+            this.verified = verified;
+            this.locked = locked;
+            this.cachedAt = System.currentTimeMillis();
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() - cachedAt > 60_000;
+        }
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, CachedUserStatus> statusCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -34,18 +56,45 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UUID userId = tokenProvider.getUserIdFromToken(jwt);
                 String email = tokenProvider.getEmailFromToken(jwt);
 
-                UserPrincipal principal = new UserPrincipal(userId, email);
+                boolean allowed = true;
+                if (userRepository != null && (userId != null || (email != null && !email.isBlank()))) {
+                    String cacheKey = userId != null ? userId.toString() : email.toLowerCase().trim();
+                    CachedUserStatus status = statusCache.get(cacheKey);
 
-                List<SimpleGrantedAuthority> authorities = Collections.singletonList(
-                        new SimpleGrantedAuthority("ROLE_USER")
-                );
+                    if (status == null || status.isExpired()) {
+                        java.util.Optional<com.teknoycart.models.User> userOpt = userId != null
+                                ? userRepository.findById(userId)
+                                : userRepository.findByEmail(email.toLowerCase().trim());
 
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        principal, null, authorities
-                );
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        if (userOpt.isEmpty()) {
+                            allowed = false;
+                        } else {
+                            com.teknoycart.models.User u = userOpt.get();
+                            status = new CachedUserStatus(u.isVerified(), u.isLocked());
+                            statusCache.put(cacheKey, status);
+                            allowed = status.verified && !status.locked;
+                        }
+                    } else {
+                        allowed = status.verified && !status.locked;
+                    }
+                }
 
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (allowed) {
+                    UserPrincipal principal = new UserPrincipal(userId, email);
+
+                    List<SimpleGrantedAuthority> authorities = Collections.singletonList(
+                            new SimpleGrantedAuthority("ROLE_USER")
+                    );
+
+                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                            principal, null, authorities
+                    );
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    SecurityContextHolder.clearContext();
+                }
             }
         } catch (Exception ex) {
             logger.error("Could not set user authentication in security context", ex);
