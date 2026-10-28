@@ -1,6 +1,7 @@
 package com.teknoycart.models;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -194,6 +195,9 @@ public class Order {
         this.buyerConfirmedReceipt = buyerConfirmedReceipt;
     }
 
+    // OTP values are secrets: the buyer reads their own code from the
+    // my_order_codes view, never from an order response body.
+    @JsonIgnore
     public String getHandoffOtp() {
         return handoffOtp;
     }
@@ -226,6 +230,7 @@ public class Order {
         this.handoffCompletedAt = handoffCompletedAt;
     }
 
+    @JsonIgnore
     public String getReturnOtp() {
         return returnOtp;
     }

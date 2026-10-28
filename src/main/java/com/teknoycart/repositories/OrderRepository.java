@@ -23,5 +23,14 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      */
     @Query("SELECT o FROM Order o WHERE o.status = 'AWAITING_PAYMENT' AND o.paymentExpiresAt < :now")
     List<Order> findExpiredAwaitingPayment(@Param("now") Instant now);
+
+    /**
+     * Completed GCash orders whose payout was never released. The RPC confirm
+     * path transitions the row in SQL without calling the Java payout service,
+     * so the hourly sweep is the convergence point.
+     */
+    @Query("SELECT o FROM Order o WHERE o.status = 'COMPLETED' " +
+           "AND o.payoutReleased = false AND o.amountCentavos IS NOT NULL")
+    List<Order> findCompletedWithoutPayout();
 }
 

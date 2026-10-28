@@ -85,11 +85,32 @@ public class OrderTimeoutService {
         int staleMeetups = processStaleScheduledMeetups();
         int autoCompleted = processStaleHandoffs();
         int escalatedRefunds = processStaleRefundRequests();
+        int releasedPayouts = processUnreleasedPayouts();
 
-        if (staleMeetups > 0 || autoCompleted > 0 || escalatedRefunds > 0) {
-            log.info("Timeout job completed: {} meetups flagged for review, {} handoffs auto-completed, {} refunds escalated to dispute",
-                    staleMeetups, autoCompleted, escalatedRefunds);
+        if (staleMeetups > 0 || autoCompleted > 0 || escalatedRefunds > 0 || releasedPayouts > 0) {
+            log.info("Timeout job completed: {} meetups flagged for review, {} handoffs auto-completed, {} refunds escalated to dispute, {} payouts released",
+                    staleMeetups, autoCompleted, escalatedRefunds, releasedPayouts);
         }
+    }
+
+    /**
+     * Completes payout records for orders finished through confirm_receipt_as_buyer,
+     * which updates the row in SQL and therefore never calls OrderService.releasePayout.
+     * releasePayout() is idempotent, so reruns are safe.
+     */
+    private int processUnreleasedPayouts() {
+        List<Order> completed = orderRepository.findCompletedWithoutPayout();
+        int count = 0;
+
+        for (Order order : completed) {
+            try {
+                orderService.releasePayout(order);
+                count++;
+            } catch (Exception e) {
+                log.error("Payout release failed for completed order {}: {}", order.getId(), e.getMessage());
+            }
+        }
+        return count;
     }
 
     private int processStaleScheduledMeetups() {
