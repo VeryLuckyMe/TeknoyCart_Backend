@@ -22,6 +22,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String STATUS_RESILIENCE_VERSION = "V5__order_status_and_audit_resilience";
     private static final String NOTIFICATIONS_MIGRATION_VERSION = "V7__notifications_admin_fanout_and_verify_procedure";
     private static final String P6_HARDENING_VERSION = "V8__admin_backdoor_hardening";
+    private static final String P0_SECURITY_VERSION = "V10__p0_security_hardening";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -111,6 +112,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applyStatusResilienceMigration();
         applyNotificationsMigration();
         applyP6HardeningMigration();
+        applyP0SecurityMigration();
     }
 
     private void applyRlsMigration() {
@@ -296,6 +298,53 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             logger.error("Failed to apply P6 admin backdoor hardening migration: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applyP0SecurityMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                P0_SECURITY_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("P0 security hardening migration [{}] is already applied. Skipping DDL on boot.", P0_SECURITY_VERSION);
+                return;
+            }
+
+            logger.info("Applying P0 order and marketplace integrity migration [{}]...", P0_SECURITY_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_p0_security_hardening.sql");
+            if (resource.exists()) {
+                String p0Sql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(p0Sql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    P0_SECURITY_VERSION
+                );
+                logger.info("Successfully applied P0 order and marketplace integrity migration to database.");
+            } else {
+                logger.warn("P0 security migration script not found in classpath: db/migration_p0_security_hardening.sql");
+            }
+        } catch (Exception e) {
+            if (isPostgresDatabase()) {
+                // Fail closed: booting with client-writable orders or exposed OTPs is
+                // worse than a failed start. The script is idempotent, so a restart retries.
+                throw new IllegalStateException(
+                        "P0 security hardening failed to apply; refusing to start with order/OTP protections missing.", e);
+            }
+            logger.warn("P0 security migration skipped on non-PostgreSQL datasource: {}", e.getMessage());
+        }
+    }
+
+    private boolean isPostgresDatabase() {
+        try (java.sql.Connection connection = java.util.Objects.requireNonNull(
+                jdbcTemplate.getDataSource()).getConnection()) {
+            return connection.getMetaData().getDatabaseProductName()
+                    .toLowerCase(java.util.Locale.ROOT).contains("postgres");
+        } catch (Exception e) {
+            return false;
         }
     }
 }
