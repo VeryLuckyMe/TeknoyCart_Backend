@@ -159,16 +159,22 @@ public class OrderService {
         }
 
         // B-2 fix: AWAITING_PAYMENT = checkout session exists. Buyer cancelled before paying.
-        // Revert to ACCEPTED and clear the checkout session fields.
+        // Seller cancellation, however, terminates the order: the seller has decided
+        // not to proceed, so reverting to ACCEPTED would leave it stuck.
         if (order.getStatus() == OrderStatus.AWAITING_PAYMENT) {
             OrderStatus oldStatus = order.getStatus();
-            order.setStatus(OrderStatus.ACCEPTED);
+            boolean sellerCancelling = actorId.equals(order.getSellerId());
+            OrderStatus targetStatus = sellerCancelling ? OrderStatus.CANCELLED : OrderStatus.ACCEPTED;
+            order.setStatus(targetStatus);
             order.setPaymongoCheckoutSessionId(null);
             order.setPaymongoCheckoutUrl(null);
             order.setPaymentExpiresAt(null);
             order = orderRepository.save(order);
-            logAudit(order, actorId, oldStatus, OrderStatus.ACCEPTED,
-                    "BUYER_CANCELLED_AWAITING_PAYMENT - Checkout session cleared. Reason: " + reason.trim());
+            String auditPrefix = sellerCancelling
+                    ? "SELLER_CANCELLED_AWAITING_PAYMENT"
+                    : "BUYER_CANCELLED_AWAITING_PAYMENT";
+            logAudit(order, actorId, oldStatus, targetStatus,
+                    auditPrefix + " - Checkout session cleared. Reason: " + reason.trim());
             return order;
         }
 

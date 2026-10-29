@@ -257,4 +257,78 @@ public class OrderLifecycleTest {
             orderService.resolveDispute(orderId, adminId, "CANCEL", "Attempted cancel post handoff");
         });
     }
+
+    @Test
+    @DisplayName("Seller cancels an ACCEPTED order and it becomes CANCELLED")
+    void testSellerCancelsAcceptedOrder() {
+        Order order = createOrder(OrderStatus.ACCEPTED);
+
+        Order cancelled = orderService.cancelOrder(order.getId(), sellerId, "Item no longer available");
+
+        assertEquals(OrderStatus.CANCELLED, cancelled.getStatus());
+    }
+
+    @Test
+    @DisplayName("Seller cancels AWAITING_PAYMENT: order becomes CANCELLED and checkout fields are cleared")
+    void testSellerCancelsAwaitingPaymentOrder() {
+        Order order = createOrder(OrderStatus.AWAITING_PAYMENT);
+        order.setPaymongoCheckoutSessionId("cs_test_123");
+        order.setPaymongoCheckoutUrl("https://checkout.paymongo.test/cs_test_123");
+        order.setPaymentExpiresAt(Instant.now().plusSeconds(600));
+        order = orderRepository.saveAndFlush(order);
+
+        Order cancelled = orderService.cancelOrder(order.getId(), sellerId, "Seller aborted checkout");
+
+        assertEquals(OrderStatus.CANCELLED, cancelled.getStatus());
+        assertNull(cancelled.getPaymongoCheckoutSessionId());
+        assertNull(cancelled.getPaymongoCheckoutUrl());
+        assertNull(cancelled.getPaymentExpiresAt());
+    }
+
+    @Test
+    @DisplayName("Buyer cancelling AWAITING_PAYMENT preserves the legacy ACCEPTED revert")
+    void testBuyerCancelAwaitingPaymentRevertsToAccepted() {
+        Order order = createOrder(OrderStatus.AWAITING_PAYMENT);
+        order.setPaymongoCheckoutSessionId("cs_buyer_123");
+        order = orderRepository.saveAndFlush(order);
+
+        Order reverted = orderService.cancelOrder(order.getId(), buyerId, "Changed payment method");
+
+        assertEquals(OrderStatus.ACCEPTED, reverted.getStatus());
+        assertNull(reverted.getPaymongoCheckoutSessionId());
+    }
+
+    @Test
+    @DisplayName("Seller cancelling an ESCROWED GCash order routes to REFUND_PENDING, never CANCELLED")
+    void testSellerCancelsEscrowedOrderRoutesToRefundPending() {
+        Order order = createOrder(OrderStatus.ESCROWED);
+        order.setAmountCentavos(25000L);
+        order = orderRepository.saveAndFlush(order);
+
+        Order refundPending = orderService.cancelOrder(order.getId(), sellerId, "Cannot fulfill order");
+
+        assertEquals(OrderStatus.REFUND_PENDING, refundPending.getStatus());
+    }
+
+    @Test
+    @DisplayName("A non-party cannot cancel someone else's order")
+    void testNonPartyCannotCancelOrder() {
+        Order order = createOrder(OrderStatus.ACCEPTED);
+        final UUID orderId = order.getId();
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> {
+            orderService.cancelOrder(orderId, adminId, "Admin unilateral cancel");
+        });
+    }
+
+    @Test
+    @DisplayName("Seller cannot cancel a COMPLETED order")
+    void testSellerCannotCancelCompletedOrder() {
+        Order order = createOrder(OrderStatus.COMPLETED);
+        final UUID orderId = order.getId();
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> {
+            orderService.cancelOrder(orderId, sellerId, "Too late");
+        });
+    }
 }

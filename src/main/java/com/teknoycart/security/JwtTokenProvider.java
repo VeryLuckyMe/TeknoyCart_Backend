@@ -43,6 +43,14 @@ public class JwtTokenProvider {
     @Value("${jwt.secret:}")
     private String jwtSecret;
 
+    /**
+     * Legacy Supabase JWT secret (Project Settings → API → JWT Secret).
+     * Optional: only needed when Supabase still issues HS256 access tokens.
+     * Asymmetric (ES256) tokens are validated through JWKS and need no secret.
+     */
+    @Value("${supabase.jwt-secret:}")
+    private String supabaseJwtSecret;
+
     @Value("${jwt.expiration:3600000}")
     private long jwtExpirationMs;
 
@@ -51,6 +59,14 @@ public class JwtTokenProvider {
             throw new IllegalStateException("JWT_SECRET must contain at least 32 bytes");
         }
         return io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private javax.crypto.SecretKey getSupabaseSigningKey() {
+        if (supabaseJwtSecret == null || supabaseJwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            return null;
+        }
+        return io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                supabaseJwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     private final ConcurrentHashMap<String, PublicKey> keyCache = new ConcurrentHashMap<>();
@@ -217,8 +233,14 @@ public class JwtTokenProvider {
 
         // 2. Dispatch to correct validation path based on algorithm (MED-11)
         if ("HS256".equalsIgnoreCase(alg)) {
-            // Backend-issued JWT: validate with HMAC signing key
-            return validateHs256Token(token);
+            // Backend-issued JWT: validate with the backend HMAC signing key.
+            if (validateHs256Token(token, getSigningKey())) {
+                return true;
+            }
+            // Supabase legacy HS256 access token: validate with the project JWT secret.
+            // Kept optional so ES256-only deployments need no extra configuration.
+            javax.crypto.SecretKey supabaseKey = getSupabaseSigningKey();
+            return supabaseKey != null && validateSupabaseHs256Token(token, supabaseKey);
         } else if ("ES256".equalsIgnoreCase(alg)) {
             // Supabase-issued JWT: validate with EC public key
             return validateEs256Token(token, kid);
@@ -228,10 +250,10 @@ public class JwtTokenProvider {
         }
     }
 
-    private boolean validateHs256Token(String token) {
+    private boolean validateHs256Token(String token, javax.crypto.SecretKey signingKey) {
         try {
             Jws<Claims> jws = Jwts.parserBuilder()
-                    .setSigningKey(getSigningKey())
+                    .setSigningKey(signingKey)
                     .build()
                     .parseClaimsJws(token);
 
@@ -243,7 +265,33 @@ public class JwtTokenProvider {
         } catch (ExpiredJwtException e) {
             logger.warn("Backend JWT has expired: {}", e.getMessage());
         } catch (JwtException | IllegalArgumentException e) {
-            logger.warn("Backend JWT signature validation failed: {}", e.getMessage());
+            logger.debug("HS256 signature validation failed: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    private boolean validateSupabaseHs256Token(String token, javax.crypto.SecretKey signingKey) {
+        try {
+            Jws<Claims> jws = Jwts.parserBuilder()
+                    .setSigningKey(signingKey)
+                    .build()
+                    .parseClaimsJws(token);
+
+            if (!"HS256".equalsIgnoreCase(jws.getHeader().getAlgorithm())) {
+                logger.warn("Supabase HS256 JWS algorithm mismatch: {}", jws.getHeader().getAlgorithm());
+                return false;
+            }
+            Claims claims = jws.getBody();
+            if (expectedIssuer == null || !expectedIssuer.equals(claims.getIssuer())) {
+                logger.warn("Supabase HS256 JWT issuer mismatch: expected {} but got {}",
+                        expectedIssuer, claims.getIssuer());
+                return false;
+            }
+            return true;
+        } catch (ExpiredJwtException e) {
+            logger.warn("Supabase HS256 JWT has expired: {}", e.getMessage());
+        } catch (JwtException | IllegalArgumentException e) {
+            logger.debug("Supabase HS256 signature validation failed: {}", e.getMessage());
         }
         return false;
     }
@@ -299,11 +347,19 @@ public class JwtTokenProvider {
     private Claims parseVerifiedClaims(String token) {
         String alg = extractAlgFromTokenHeader(token);
         if ("HS256".equalsIgnoreCase(alg)) {
-            return Jwts.parserBuilder()
-                    .setSigningKey(getSigningKey())
-                    .build()
-                    .parseClaimsJws(token)
-                    .getBody();
+            try {
+                return parseHs256Claims(token, getSigningKey());
+            } catch (JwtException | IllegalArgumentException backendKeyFailure) {
+                javax.crypto.SecretKey supabaseKey = getSupabaseSigningKey();
+                if (supabaseKey == null) {
+                    throw backendKeyFailure;
+                }
+                Claims claims = parseHs256Claims(token, supabaseKey);
+                if (expectedIssuer == null || !expectedIssuer.equals(claims.getIssuer())) {
+                    throw new JwtException("Supabase HS256 JWT issuer mismatch");
+                }
+                return claims;
+            }
         } else if ("ES256".equalsIgnoreCase(alg)) {
             String kid = extractKidFromTokenHeader(token);
             PublicKey publicKey = getKeyForToken(kid);
@@ -318,6 +374,14 @@ public class JwtTokenProvider {
         } else {
             throw new JwtException("Unsupported JWT algorithm: " + alg);
         }
+    }
+
+    private Claims parseHs256Claims(String token, javax.crypto.SecretKey signingKey) {
+        return Jwts.parserBuilder()
+                .setSigningKey(signingKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     public UUID getUserIdFromToken(String token) {

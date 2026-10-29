@@ -388,16 +388,15 @@ public class AuthController {
             ));
         }
 
-        // 5. Successful login: Return Supabase token / session
+        // 5. Successful login: issue a backend JWT for Spring Boot API calls.
+        // The Supabase session is returned separately under "session" and MUST NOT
+        // be used as the backend bearer token: Spring Boot validates its own
+        // HS256 tokens (and Supabase ES256 tokens via JWKS).
         String token = null;
-        if (supabaseSession != null && supabaseSession.get("access_token") != null) {
-            token = supabaseSession.get("access_token").toString();
-        } else {
-            try {
-                token = tokenProvider.generateToken(user.getUserId(), user.getEmail(), user.getRole());
-            } catch (Exception e) {
-                logger.error("Error generating session JWT token: {}", e.getMessage(), e);
-            }
+        try {
+            token = tokenProvider.generateToken(user.getUserId(), user.getEmail(), user.getRole());
+        } catch (Exception e) {
+            logger.error("Error generating backend JWT token: {}", e.getMessage(), e);
         }
 
         // Build sanitized user map without sensitive security hashes/tokens
