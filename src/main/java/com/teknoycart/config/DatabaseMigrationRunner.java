@@ -102,6 +102,16 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
                 "    END IF; " +
                 "END $$;"
             );
+            // 6. Ensure store_profiles table is readable by anon and authenticated for public marketplace storefronts
+            try {
+                jdbcTemplate.execute("GRANT SELECT ON TABLE public.store_profiles TO anon, authenticated;");
+                jdbcTemplate.execute("DO $$ BEGIN " +
+                    "DROP POLICY IF EXISTS \"store_profiles_select_public\" ON public.store_profiles; " +
+                    "CREATE POLICY \"store_profiles_select_public\" ON public.store_profiles FOR SELECT TO public USING (true); " +
+                    "EXCEPTION WHEN OTHERS THEN NULL; END $$;");
+            } catch (Exception e) {
+                logger.warn("Could not grant store_profiles public access: {}", e.getMessage());
+            }
         } catch (Exception e) {
             logger.warn("Pre-boot database schema resilience fix: {}", e.getMessage());
         }
