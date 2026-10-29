@@ -23,6 +23,8 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String NOTIFICATIONS_MIGRATION_VERSION = "V7__notifications_admin_fanout_and_verify_procedure";
     private static final String P6_HARDENING_VERSION = "V8__admin_backdoor_hardening";
     private static final String P0_SECURITY_VERSION = "V10__p0_security_hardening";
+    private static final String REVIEW_NOTIFICATIONS_VERSION = "V11__review_notifications";
+    private static final String SELLER_CANCEL_VERSION = "V12__seller_cancel_hardening";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -123,6 +125,8 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applyNotificationsMigration();
         applyP6HardeningMigration();
         applyP0SecurityMigration();
+        applyReviewNotificationsMigration();
+        applySellerCancelMigration();
     }
 
     private void applyRlsMigration() {
@@ -345,6 +349,78 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
                         "P0 security hardening failed to apply; refusing to start with order/OTP protections missing.", e);
             }
             logger.warn("P0 security migration skipped on non-PostgreSQL datasource: {}", e.getMessage());
+        }
+    }
+
+    private void applyReviewNotificationsMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                REVIEW_NOTIFICATIONS_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Seller review notification migration [{}] is already applied. Skipping DDL on boot.", REVIEW_NOTIFICATIONS_VERSION);
+                return;
+            }
+
+            logger.info("Applying seller review notification migration [{}]...", REVIEW_NOTIFICATIONS_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_review_notifications.sql");
+            if (resource.exists()) {
+                String reviewNotificationSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(reviewNotificationSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    REVIEW_NOTIFICATIONS_VERSION
+                );
+                logger.info("Successfully applied seller review notification migration to database.");
+            } else {
+                logger.warn("Seller review notification migration script not found in classpath: db/migration_review_notifications.sql");
+            }
+        } catch (Exception e) {
+            // Non-critical feature: never prevent the backend from booting if the
+            // trigger cannot be installed. The script is idempotent, so a restart retries.
+            logger.error("Failed to apply seller review notification migration: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applySellerCancelMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                SELLER_CANCEL_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Seller cancellation hardening migration [{}] is already applied. Skipping DDL on boot.", SELLER_CANCEL_VERSION);
+                return;
+            }
+
+            logger.info("Applying seller cancellation hardening migration [{}]...", SELLER_CANCEL_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_v12_seller_cancel.sql");
+            if (resource.exists()) {
+                String sellerCancelSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(sellerCancelSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    SELLER_CANCEL_VERSION
+                );
+                logger.info("Successfully applied seller cancellation hardening migration to database.");
+            } else {
+                logger.warn("Seller cancellation migration script not found in classpath: db/migration_v12_seller_cancel.sql");
+            }
+        } catch (Exception e) {
+            if (isPostgresDatabase()) {
+                // Fail closed: the previous RPC allowed unauthenticated callers to
+                // cancel any order. Booting without the hardened definition would
+                // leave that hole open. The script is idempotent, so restart retries.
+                throw new IllegalStateException(
+                        "Seller cancellation hardening failed to apply; refusing to start with the legacy RPC.",
+                        e);
+            }
+            logger.warn("Seller cancellation migration skipped on non-PostgreSQL datasource: {}", e.getMessage());
         }
     }
 

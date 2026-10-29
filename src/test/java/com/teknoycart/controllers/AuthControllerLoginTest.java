@@ -19,10 +19,12 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentCaptor.forClass;
@@ -229,8 +231,7 @@ public class AuthControllerLoginTest {
 
     @Test
     @DisplayName("Expired lock automatically clears on next login attempt")
-    void testExpiredLockClearsAutomatically() {
-        User user = new User();
+    void testExpiredLockClearsAutomatically() {        User user = new User();
         user.setEmail("expiredlock@cit.edu");
         user.setFullName("Expired User");
         user.setPasswordHash(passwordEncoder.encode("correct_pass"));
@@ -256,5 +257,31 @@ public class AuthControllerLoginTest {
         User dbUser = userRepository.findByEmail("expiredlock@cit.edu").orElseThrow();
         assertFalse(dbUser.isLocked());
         assertEquals(1, dbUser.getFailedAttempts());
+    }
+
+    @Test
+    @DisplayName("Successful login returns a backend-issued JWT as token, not the Supabase access token")
+    void testSuccessfulLoginReturnsBackendJwt() {
+        User user = new User();
+        user.setEmail("verified.login@cit.edu");
+        user.setFullName("Verified Student");
+        user.setPasswordHash(passwordEncoder.encode("correct_pass"));
+        user.setVerified(true);
+        user.setRole("SELLER");
+        userRepository.save(user);
+
+        when(tokenProvider.generateToken(any(UUID.class), anyString(), anyString()))
+                .thenReturn("backend.jwt.token");
+
+        ResponseEntity<?> response = authController.authenticateUser(Map.of(
+            "email", "verified.login@cit.edu",
+            "password", "correct_pass"
+        ));
+
+        assertEquals(200, response.getStatusCode().value());
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        assertEquals("backend.jwt.token", body.get("token"),
+            "Spring Boot API calls must receive a backend-signed JWT");
+        assertNotNull(body.get("user"));
     }
 }
