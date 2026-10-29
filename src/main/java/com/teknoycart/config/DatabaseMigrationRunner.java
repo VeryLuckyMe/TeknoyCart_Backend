@@ -25,6 +25,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String P0_SECURITY_VERSION = "V10__p0_security_hardening";
     private static final String REVIEW_NOTIFICATIONS_VERSION = "V11__review_notifications";
     private static final String SELLER_CANCEL_VERSION = "V12__seller_cancel_hardening";
+    private static final String ADMIN_DISPUTE_VERSION = "V13__admin_dispute_and_order_access";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -127,6 +128,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applyP0SecurityMigration();
         applyReviewNotificationsMigration();
         applySellerCancelMigration();
+        applyAdminDisputeMigration();
     }
 
     private void applyRlsMigration() {
@@ -433,6 +435,35 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             return false;
         }
     }
+
+    private void applyAdminDisputeMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                ADMIN_DISPUTE_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Admin dispute and order access migration [{}] is already applied. Skipping DDL on boot.", ADMIN_DISPUTE_VERSION);
+                return;
+            }
+
+            logger.info("Applying admin dispute and order access migration [{}]...", ADMIN_DISPUTE_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_v13_admin_dispute_and_order_access.sql");
+            if (resource.exists()) {
+                String disputeSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(disputeSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    ADMIN_DISPUTE_VERSION
+                );
+                logger.info("Successfully applied admin dispute and order access migration to database.");
+            } else {
+                logger.warn("Admin dispute migration script not found in classpath: db/migration_v13_admin_dispute_and_order_access.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply admin dispute migration: {}", e.getMessage(), e);
+        }
+    }
 }
-
-
