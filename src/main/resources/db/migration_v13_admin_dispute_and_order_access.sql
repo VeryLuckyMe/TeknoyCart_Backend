@@ -40,3 +40,4 @@ GRANT UPDATE (
 
 -- 3. Reload schema cache for PostgREST
 NOTIFY pgrst, 'reload schema';
+
