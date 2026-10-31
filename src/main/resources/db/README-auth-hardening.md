@@ -152,11 +152,12 @@ Do not create a second ledger.
   `INSERT`, and own-row `UPDATE` (`full_name, contact, gcash_number,
   last_seen_at`). `anon` gets no base-table grant.
 - `my_profile` exposes own PII to authenticated users only.
-  `public_profiles` exposes only public fields to anon/authenticated.
+  `public_profiles` exposes only public fields to authenticated users (the
+  2026-10-31 hardening revoked `anon`).
   `admin_kyc_queue` is gated by an active, verified, unlocked ADMIN.
 - The authenticated-only views explicitly revoke the inherited `anon`/`PUBLIC`
-  grant that Supabase applies to new public views; `public_profiles` and
-  `public_store_profiles` keep their intentional `anon` grant.
+  grant that Supabase applies to new public views; `public_store_profiles`
+  keeps its intentional `anon` grant.
 - `store_profiles` loses table-level grants but keeps safe column `SELECT`
   (including `usual_active_hours`, `preferred_meetup_spots`,
   `welcome_message_template`) and own-row `INSERT`/`UPDATE` including
@@ -244,8 +245,8 @@ The script checks:
 
 - buyer `users.email` denied; safe `users` columns and `my_profile` allowed;
 - buyer `PATCH role=ADMIN` and `POST role=ADMIN` denied, role unchanged;
-- anon `users.email` denied; `public_profiles` and `public_store_profiles`
-  allowed;
+- anon `users.email` denied; `public_profiles` denied;
+  `public_store_profiles` allowed;
 - anon `my_profile`, `admin_kyc_queue`, and `my_store_profile` denied;
 - buyer `store_profiles.contact_number` denied;
 - buyer/pending seller product insert denied; approved seller insert allowed;
@@ -258,6 +259,49 @@ id to delete via the SQL editor. Do not put passwords in the repo or in chat.
 
 Then run the two-device Realtime smoke test (buyer + seller chat + presence).
 A broken subscription blocks the migration.
+
+## 2026-10-31 follow-up: public_profiles and store_profiles
+
+Supabase Security Advisor flagged `public.public_profiles` for
+`security_definer_view` and `auth_users_exposed`. The view joined `auth.users`
+for avatar metadata and was readable by `anon`, so every user's name, seller
+flag and `last_seen_at` could be enumerated without signing in.
+
+Apply:
+
+- `db/patch_public_profiles_hardening_2026_10_31.sql`
+
+It rebuilds the view with `security_invoker = true`, removes the `auth.users`
+join, keeps `avatar_url` as `NULL` for column compatibility, and revokes
+`anon`/`PUBLIC`. All current `public_profiles` reads happen after sign-in:
+order history, inbox, storefront and presence. No app code change is required.
+
+The same patch repairs `store_profiles`. `DatabaseMigrationRunner` used to run
+`GRANT SELECT ON TABLE public.store_profiles TO anon, authenticated` on every
+boot, which overrode W1's column-level grants and exposed `contact_number`.
+The runner now only recreates the public storefront policy; the patch revokes
+the table-level grant and restores the safe-column grants. The Java change must
+be deployed with the next backend deploy, otherwise the next boot will
+re-introduce the table-level grant. If the service boots with the old runner,
+re-run the patch (or at least its `store_profiles` section) after the new
+deploy.
+
+Verify with:
+
+- `db/diagnostics/verify_public_profiles_hardening_2026_10_31.sql` - every row
+  must be `PASS`.
+- `db/diagnostics/auth_w1_verify_2026_10_24.sql` - V11 and V13 now expect the
+  hardened state (anon denied, `security_invoker = true`); the other checks are
+  unchanged.
+- `scripts/auth_w1_live_proof.ps1` - R12 now expects anon to be denied and
+  R12b proves a signed-in buyer can still read the view.
+
+The remaining Security Advisor `security_definer_view` rows are intentional:
+`my_profile` (own PII), `admin_kyc_queue` (verified admin queue),
+`my_order_codes` (buyer OTPs) and `public_store_profiles` (public storefront).
+They need definer semantics because the base tables intentionally do not grant
+those columns to `authenticated`. Do not convert them to `security_invoker`
+without a broader grants/RLS redesign.
 
 ## Rollback
 
