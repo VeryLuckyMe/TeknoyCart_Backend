@@ -172,12 +172,14 @@ checks AS (
            CASE WHEN store_definition LIKE '%contact_number%' THEN 'FAIL' ELSE 'PASS' END,
            CASE WHEN store_definition LIKE '%contact_number%' THEN 'present' ELSE 'absent' END,
            'absent'
+    FROM v
 
     UNION ALL
     SELECT 23, 'public_profiles keeps user_id',
            CASE WHEN definition LIKE '%user_id%' THEN 'PASS' ELSE 'FAIL' END,
            CASE WHEN definition LIKE '%user_id%' THEN 'present' ELSE 'missing' END,
            'present'
+    FROM v
 
     UNION ALL
     SELECT 24, 'anon has no column-level SELECT on public_profiles.full_name',

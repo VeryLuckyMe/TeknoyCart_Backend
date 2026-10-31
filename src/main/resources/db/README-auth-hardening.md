@@ -297,11 +297,12 @@ Verify with:
   R12b proves a signed-in buyer can still read the view.
 
 The remaining Security Advisor `security_definer_view` rows are intentional:
-`my_profile` (own PII), `admin_kyc_queue` (verified admin queue),
-`my_order_codes` (buyer OTPs) and `public_store_profiles` (public storefront).
-They need definer semantics because the base tables intentionally do not grant
-those columns to `authenticated`. Do not convert them to `security_invoker`
-without a broader grants/RLS redesign.
+`my_profile` (own PII), `my_store_profile` (own store row, including
+`contact_number`), `admin_kyc_queue` (verified admin queue), `my_order_codes`
+(buyer OTPs) and `public_store_profiles` (public storefront). They need definer
+semantics because the base tables intentionally do not grant those columns to
+`authenticated`. Do not convert them to `security_invoker` without a broader
+grants/RLS redesign.
 
 ## Rollback
 
