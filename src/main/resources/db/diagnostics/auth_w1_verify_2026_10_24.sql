@@ -7,6 +7,9 @@
 -- It does not select emails, names, tokens, phone numbers, or storage paths.
 -- It does not create, alter, drop, insert, update, or delete anything.
 -- Target ledger version: V9__auth_hardening
+-- 2026-10-31: V11 and V13 expect patch_public_profiles_hardening_2026_10_31.sql.
+-- Apply that patch before rerunning this script, or those two rows will show
+-- the pre-patch state.
 -- ============================================================================
 
 WITH
@@ -409,10 +412,13 @@ checks AS (
                 WHEN (SELECT definition FROM my_profile) LIKE '%is_locked%' THEN 'present' ELSE 'absent' END
 
     -- PUBLIC_PROFILES VIEW --------------------------------------------------
+    -- 2026-10-31: public_profiles is now security_invoker and authenticated-only.
+    -- V11 expects anon denied; V13 expects security_invoker=true (actual 'false'
+    -- in the definer-state convention used by this script).
     UNION ALL
     SELECT 'V10', 'Views', 'true', (to_regclass('public.public_profiles') IS NOT NULL)::text
     UNION ALL
-    SELECT 'V11', 'Views', 'true',
+    SELECT 'V11', 'Views', 'false',
            CASE WHEN to_regclass('public.public_profiles') IS NULL THEN 'missing'
                 ELSE has_table_privilege('anon', 'public.public_profiles', 'SELECT')::text END
     UNION ALL
@@ -420,7 +426,7 @@ checks AS (
            CASE WHEN to_regclass('public.public_profiles') IS NULL THEN 'missing'
                 ELSE has_table_privilege('authenticated', 'public.public_profiles', 'SELECT')::text END
     UNION ALL
-    SELECT 'V13', 'Views', 'true',
+    SELECT 'V13', 'Views', 'false',
            CASE WHEN to_regclass('public.public_profiles') IS NULL THEN 'missing'
                 WHEN COALESCE((SELECT array_to_string(reloptions, ',') FROM pg_class WHERE oid = to_regclass('public.public_profiles')), '') LIKE '%security_invoker=true%'
                 THEN 'false' ELSE 'true' END

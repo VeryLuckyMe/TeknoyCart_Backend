@@ -261,9 +261,15 @@ try {
     $response = Invoke-Supabase -Method GET `
         -Path '/rest/v1/public_profiles?select=user_id,full_name,is_seller_verified,last_seen_at&limit=1' `
         -Token $AnonKey
+    Add-Result 'R12 anon cannot read public_profiles' 'non-2xx' $response.Status `
+        (-not (Test-Success $response.Status)) $response.Body
+
+    $response = Invoke-Supabase -Method GET `
+        -Path '/rest/v1/public_profiles?select=user_id,full_name,is_seller_verified,last_seen_at&limit=1' `
+        -Token $buyer.Token
     $rows = Get-JsonArray $response.Body
-    Add-Result 'R12 anon can read public_profiles' '200' "$($response.Status) / $($rows.Count) rows" `
-        (Test-Success $response.Status) $response.Body
+    Add-Result 'R12b buyer can read public_profiles' '200' "$($response.Status) / $($rows.Count) rows" `
+        ((Test-Success $response.Status) -and $rows.Count -ge 1) $response.Body
 
     $response = Invoke-Supabase -Method GET `
         -Path '/rest/v1/public_store_profiles?select=*&limit=1' -Token $AnonKey
