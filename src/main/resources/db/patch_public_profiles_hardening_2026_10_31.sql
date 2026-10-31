@@ -24,9 +24,10 @@
 --      exposes contact_number. Revoke the table-level grant and restore only
 --      the safe columns.
 --
--- The private PII views (my_profile, admin_kyc_queue, my_order_codes) and the
--- public storefront view (public_store_profiles) remain SECURITY DEFINER by
--- design. See README-auth-hardening.md before changing them.
+-- The private PII views (my_profile, admin_kyc_queue, my_order_codes) remain
+-- SECURITY DEFINER by design. public_store_profiles and my_store_profile were
+-- unreferenced and are dropped by patch_drop_unused_definer_views_2026_11_01.sql.
+-- See README-auth-hardening.md before changing any of them.
 -- ============================================================================
 
 BEGIN;
