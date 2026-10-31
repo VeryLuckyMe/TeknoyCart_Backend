@@ -111,12 +111,12 @@ schema/count diagnostic, not the data backup.
 2. In the Supabase SQL editor, run the entire migration (it is wrapped in
    `BEGIN`/`COMMIT`). Save the editor output.
 3. Run `diagnostics/auth_w1_verify_2026_10_24.sql`. It is read-only. It must
-   return **0 failures**. The script has 147 checks after the W0 review. The
-   pre-migration baseline is **98 failures**; the other 49 checks are already
+   return **0 failures**. The script has 138 checks after the W0 review. The
+   pre-migration baseline is **89 failures**; the other 49 checks are already
    green (RLS, publication, existing policies) and must stay green.
-4. **Known repair for an earlier draft:** if only `V02`, `V21`, and `V71` fail
-   (plus the `ZZ_SUMMARY` row; actual `true` for `anon` SELECT on `my_profile`,
-   `admin_kyc_queue`, and `my_store_profile`), run
+4. **Known repair for an earlier draft:** if only `V02` and `V21` fail
+   (plus the `ZZ_SUMMARY` row; actual `true` for `anon` SELECT on `my_profile`
+   and `admin_kyc_queue`), run
    `patch_auth_hardening_view_grants_2026_10_24.sql`, then rerun the
    verification. This is Supabase's default `anon` grant on newly created
    views, not a data or RLS failure. Do not roll back for this case. The current
@@ -156,16 +156,13 @@ Do not create a second ledger.
   2026-10-31 hardening revoked `anon`).
   `admin_kyc_queue` is gated by an active, verified, unlocked ADMIN.
 - The authenticated-only views explicitly revoke the inherited `anon`/`PUBLIC`
-  grant that Supabase applies to new public views; `public_store_profiles`
-  keeps its intentional `anon` grant.
+  grant that Supabase applies to new public views.
 - `store_profiles` loses table-level grants but keeps safe column `SELECT`
   (including `usual_active_hours`, `preferred_meetup_spots`,
   `welcome_message_template`) and own-row `INSERT`/`UPDATE` including
   `contact_number` and `seller_id` (needed by
   `upsert(..., onConflict: 'seller_id')`). `contact_number` is never exposed to
-  anon/authenticated through the base table; `my_store_profile` is the owner
-  view.
-- `public_store_profiles` is the public storefront view.
+  anon/authenticated through the base table.
 - `is_student_id_available(text)` is a `SECURITY DEFINER` boolean RPC granted to
   `anon, authenticated`; it replaces the anon `users.student_id` pre-check.
 - The legacy `seller_verifications` policy `Admins can manage all verifications`
@@ -246,8 +243,8 @@ The script checks:
 - buyer `users.email` denied; safe `users` columns and `my_profile` allowed;
 - buyer `PATCH role=ADMIN` and `POST role=ADMIN` denied, role unchanged;
 - anon `users.email` denied; `public_profiles` denied;
-  `public_store_profiles` allowed;
-- anon `my_profile`, `admin_kyc_queue`, and `my_store_profile` denied;
+- anon `my_profile` and `admin_kyc_queue` denied; `public_store_profiles` and
+  `my_store_profile` are dropped, so PostgREST answers `404`;
 - buyer `store_profiles.contact_number` denied;
 - buyer/pending seller product insert denied; approved seller insert allowed;
 - buyer gets 0 `admin_kyc_queue` rows; admin gets the queue;
@@ -296,13 +293,86 @@ Verify with:
 - `scripts/auth_w1_live_proof.ps1` - R12 now expects anon to be denied and
   R12b proves a signed-in buyer can still read the view.
 
-The remaining Security Advisor `security_definer_view` rows are intentional:
-`my_profile` (own PII), `my_store_profile` (own store row, including
-`contact_number`), `admin_kyc_queue` (verified admin queue), `my_order_codes`
-(buyer OTPs) and `public_store_profiles` (public storefront). They need definer
-semantics because the base tables intentionally do not grant those columns to
-`authenticated`. Do not convert them to `security_invoker` without a broader
-grants/RLS redesign.
+## 2026-11-01 follow-up: unused definer views dropped
+
+Two of the five `security_definer_view` advisories pointed at views with no
+consumer:
+
+- `public.my_store_profile`
+- `public.public_store_profiles`
+
+Grepping for `.from('my_store_profile')` and `.from('public_store_profiles')`
+across `TeknoyCart` (Flutter), `TeknoyCartWeb` (admin React) and
+`TeknoyCart_Backend` (Java) returns no call site. The app reads
+`public.store_profiles` directly. `contact_number` is written by
+`auth_service.dart` / `profile_tab.dart` on upsert but never read back, so
+`my_store_profile` was not the owner view its name implied.
+
+Apply:
+
+- `db/patch_drop_unused_definer_views_2026_11_01.sql`
+
+Neither view is created by `DatabaseMigrationRunner`, so the drop survives
+restarts. If `migration_auth_hardening_2026_10_24.sql` is re-applied to a fresh
+project, run the drop patch afterwards.
+
+Updated expectations:
+
+- `auth_w1_verify_2026_10_24.sql`: `V70` and `V71` now expect `false` (both
+  views absent); `V72`-`V80` are retired.
+- `verify_public_profiles_hardening_2026_10_31.sql`: check 22 asserts
+  `public_store_profiles` is absent.
+- `scripts/auth_w1_live_proof.ps1`: `R13` and `R16` expect a non-2xx response.
+
+Three advisories remain and are intentional: `my_profile` (own PII),
+`admin_kyc_queue` (verified admin queue) and `my_order_codes` (buyer OTPs).
+They need definer semantics because `public.users` grants `SELECT ... USING
+(true)` to `authenticated`, so RLS filters no rows and column grants are the
+only boundary. Converting them to `security_invoker` would require granting
+`email`, `student_id`, `contact` and `gcash_number` to every signed-in student,
+and would expose buyer handoff OTPs to sellers through `orders_select_parties`.
+Do not convert them without a broader grants/RLS redesign.
+
+## 2026-11-01 follow-up: users grants restored to W1
+
+`auth_w1_verify_2026_10_24.sql` reported 35 grant failures, all "expected
+false, actual true". One fact caused all of them:
+
+```sql
+has_table_privilege('anon',          'public.users', 'SELECT')  -- true
+has_table_privilege('authenticated', 'public.users', 'SELECT')  -- true
+has_table_privilege('authenticated', 'public.users', 'INSERT')  -- true
+has_table_privilege('authenticated', 'public.users', 'UPDATE')  -- true
+```
+
+A table-level grant implies every column, so G14-G23, G30-G32, G45-G52 and
+G64-G73 all read true. The signature matches `fix_users_select_grant.sql`,
+written to clear a PostgREST 42501. Because `users_select_authenticated` is
+`FOR SELECT TO authenticated USING (true)`, that grant let any signed-in
+student read every user's `email`, `student_id`, `contact`, `gcash_number`
+and `password_hash`.
+
+Apply:
+
+- `db/patch_users_grants_restore_w1_2026_11_01.sql`
+
+It reproduces section 2 of `migration_auth_hardening_2026_10_24.sql` exactly:
+revoke table-level and residual column grants, then grant only
+
+| privilege | columns |
+| :--- | :--- |
+| `SELECT` | `user_id, full_name, role, is_seller_verified, last_seen_at` |
+| `INSERT` | `user_id, full_name, role, student_id, seller_type` |
+| `UPDATE` | `full_name, contact, gcash_number, last_seen_at` |
+
+`anon` keeps no base-table grant on `users`; public reads go through the
+authenticated-only `public_profiles` view, and own PII goes through
+`my_profile`.
+
+`fix_users_select_grant.sql` is now a documented no-op. Do not restore its
+table-level grants.
+
+Verify with `auth_w1_verify_2026_10_24.sql`: 138 checks, `ZZ_SUMMARY` = 0.
 
 ## Rollback
 

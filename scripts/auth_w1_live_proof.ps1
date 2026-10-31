@@ -273,9 +273,8 @@ try {
 
     $response = Invoke-Supabase -Method GET `
         -Path '/rest/v1/public_store_profiles?select=*&limit=1' -Token $AnonKey
-    $rows = Get-JsonArray $response.Body
-    Add-Result 'R13 anon can read public_store_profiles' '200' "$($response.Status) / $($rows.Count) rows" `
-        (Test-Success $response.Status) $response.Body
+    Add-Result 'R13 public_store_profiles is dropped' 'non-2xx' $response.Status `
+        (-not (Test-Success $response.Status)) $response.Body
 
     $response = Invoke-Supabase -Method GET `
         -Path '/rest/v1/my_profile?select=*' -Token $AnonKey
@@ -289,7 +288,7 @@ try {
 
     $response = Invoke-Supabase -Method GET `
         -Path '/rest/v1/my_store_profile?select=*' -Token $AnonKey
-    Add-Result 'R16 anon cannot read my_store_profile' 'non-2xx' $response.Status `
+    Add-Result 'R16 my_store_profile is dropped' 'non-2xx' $response.Status `
         (-not (Test-Success $response.Status)) $response.Body
 
     # ------------------------------------------------------------------------

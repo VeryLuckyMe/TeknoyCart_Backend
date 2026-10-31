@@ -1,26 +1,28 @@
--- ====================================================================
--- TeknoyCart: Fix Table Permissions for public.users
--- Platform: Supabase / PostgreSQL
--- Resolves: PostgrestException 42501 (insufficient privilege on public.users)
--- ====================================================================
-
--- 1. Grant SELECT privilege to authenticated and anon roles
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT SELECT ON TABLE public.users TO anon, authenticated;
-
--- 2. Ensure authenticated users can select, insert, and update their profile
-GRANT SELECT, INSERT, UPDATE ON TABLE public.users TO authenticated;
-
--- 3. Confirm RLS policy allows authenticated users to read profiles
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE tablename = 'users' AND policyname = 'Allow authenticated users to read profiles'
-    ) THEN
-        CREATE POLICY "Allow authenticated users to read profiles"
-            ON public.users FOR SELECT
-            TO authenticated
-            USING (true);
-    END IF;
-END $$;
+-- ============================================================================
+-- DEPRECATED 2026-11-01 - intentionally a no-op. Do not re-add these grants.
+-- ============================================================================
+--
+-- This script used to contain:
+--
+--   GRANT SELECT ON TABLE public.users TO anon, authenticated;
+--   GRANT SELECT, INSERT, UPDATE ON TABLE public.users TO authenticated;
+--
+-- It was written to clear a PostgREST 42501 on public.users. A table-level
+-- grant implies every column, and "users_select_authenticated" is
+-- `FOR SELECT TO authenticated USING (true)`, so RLS filters no rows and the
+-- grant becomes the whole boundary. That "fix" let any signed-in student read
+-- every user's email, student_id, contact, gcash_number and password_hash.
+--
+-- It is the cause of the 35 grant failures reported by
+-- auth_w1_verify_2026_10_24.sql (G01, G02, G04, G06 and every dependent column
+-- check). See the AUTH_AUDIT_REPORT M1 finding: two scripts fighting over the
+-- same grants; the safe one must win.
+--
+-- The original 42501 is now solved properly: getEnrichedProfile reads own PII
+-- from public.my_profile (security definer, WHERE user_id = auth.uid()), and
+-- no app query selects student_id, contact or gcash_number from the base
+-- table.
+--
+-- Use patch_users_grants_restore_w1_2026_11_01.sql instead. It restores W1's
+-- column-level grants, is idempotent, and is safe to re-run.
+-- ============================================================================

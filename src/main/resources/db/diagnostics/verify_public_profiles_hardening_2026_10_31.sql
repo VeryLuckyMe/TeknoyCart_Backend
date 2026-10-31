@@ -13,10 +13,7 @@ WITH v AS (
            ), '') AS options,
            COALESCE((
                SELECT pg_get_viewdef(to_regclass('public.public_profiles'), true)
-           ), '') AS definition,
-           COALESCE((
-               SELECT pg_get_viewdef(to_regclass('public.public_store_profiles'), true)
-           ), '') AS store_definition
+           ), '') AS definition
 ),
 checks AS (
     SELECT 1 AS ord, 'public_profiles exists' AS check_name,
@@ -168,11 +165,10 @@ checks AS (
            'false'
 
     UNION ALL
-    SELECT 22, 'public_store_profiles does not expose contact_number',
-           CASE WHEN store_definition LIKE '%contact_number%' THEN 'FAIL' ELSE 'PASS' END,
-           CASE WHEN store_definition LIKE '%contact_number%' THEN 'present' ELSE 'absent' END,
+    SELECT 22, 'unused public_store_profiles definer view is dropped',
+           CASE WHEN to_regclass('public.public_store_profiles') IS NULL THEN 'PASS' ELSE 'FAIL' END,
+           CASE WHEN to_regclass('public.public_store_profiles') IS NULL THEN 'absent' ELSE 'present' END,
            'absent'
-    FROM v
 
     UNION ALL
     SELECT 23, 'public_profiles keeps user_id',

@@ -40,14 +40,6 @@ admin_queue AS (
     SELECT definition FROM pg_views
     WHERE schemaname = 'public' AND viewname = 'admin_kyc_queue'
 ),
-my_store AS (
-    SELECT definition FROM pg_views
-    WHERE schemaname = 'public' AND viewname = 'my_store_profile'
-),
-public_store AS (
-    SELECT definition FROM pg_views
-    WHERE schemaname = 'public' AND viewname = 'public_store_profiles'
-),
 checks AS (
     -- RLS -------------------------------------------------------------------
     SELECT 'R01' AS check_id, 'RLS' AS area, 'true' AS expected,
@@ -510,47 +502,13 @@ checks AS (
                    OR column_name ILIKE '%contact%' OR column_name ILIKE '%gcash%'))
 
     -- STORE PROFILE VIEWS ---------------------------------------------------
+    -- 2026-11-01: my_store_profile and public_store_profiles had no call site
+    -- and are dropped by patch_drop_unused_definer_views_2026_11_01.sql. Both
+    -- must now report false. Only recreate them alongside a real consumer.
     UNION ALL
-    SELECT 'V70', 'Store', 'true', (to_regclass('public.my_store_profile') IS NOT NULL)::text
+    SELECT 'V70', 'Store', 'false', (to_regclass('public.my_store_profile') IS NOT NULL)::text
     UNION ALL
-    SELECT 'V71', 'Store', 'false',
-           CASE WHEN to_regclass('public.my_store_profile') IS NULL THEN 'missing'
-                ELSE has_table_privilege('anon', 'public.my_store_profile', 'SELECT')::text END
-    UNION ALL
-    SELECT 'V72', 'Store', 'true',
-           CASE WHEN to_regclass('public.my_store_profile') IS NULL THEN 'missing'
-                ELSE has_table_privilege('authenticated', 'public.my_store_profile', 'SELECT')::text END
-    UNION ALL
-    SELECT 'V73', 'Store', 'true',
-           CASE WHEN to_regclass('public.my_store_profile') IS NULL THEN 'missing'
-                WHEN COALESCE((SELECT array_to_string(reloptions, ',') FROM pg_class WHERE oid = to_regclass('public.my_store_profile')), '') LIKE '%security_invoker=true%'
-                THEN 'false' ELSE 'true' END
-    UNION ALL
-    SELECT 'V74', 'Store', 'present',
-           CASE WHEN (SELECT definition FROM my_store) LIKE '%auth.uid()%' THEN 'present' ELSE 'missing' END
-    UNION ALL
-    SELECT 'V75', 'Store', 'true', (to_regclass('public.public_store_profiles') IS NOT NULL)::text
-    UNION ALL
-    SELECT 'V76', 'Store', 'true',
-           CASE WHEN to_regclass('public.public_store_profiles') IS NULL THEN 'missing'
-                ELSE has_table_privilege('anon', 'public.public_store_profiles', 'SELECT')::text END
-    UNION ALL
-    SELECT 'V77', 'Store', 'true',
-           CASE WHEN to_regclass('public.public_store_profiles') IS NULL THEN 'missing'
-                ELSE has_table_privilege('authenticated', 'public.public_store_profiles', 'SELECT')::text END
-    UNION ALL
-    SELECT 'V78', 'Store', 'true',
-           CASE WHEN to_regclass('public.public_store_profiles') IS NULL THEN 'missing'
-                WHEN COALESCE((SELECT array_to_string(reloptions, ',') FROM pg_class WHERE oid = to_regclass('public.public_store_profiles')), '') LIKE '%security_invoker=true%'
-                THEN 'false' ELSE 'true' END
-    UNION ALL
-    SELECT 'V79', 'Store', 'absent',
-           CASE WHEN (SELECT definition FROM public_store) IS NULL THEN 'missing'
-                WHEN (SELECT definition FROM public_store) ~* '(phone|address|contact|gcash)' THEN 'present'
-                ELSE 'absent' END
-    UNION ALL
-    SELECT 'V80', 'Store', 'present',
-           CASE WHEN (SELECT definition FROM public_store) LIKE '%store_name%' THEN 'present' ELSE 'missing' END
+    SELECT 'V71', 'Store', 'false', (to_regclass('public.public_store_profiles') IS NOT NULL)::text
 
     -- REALTIME --------------------------------------------------------------
     UNION ALL
