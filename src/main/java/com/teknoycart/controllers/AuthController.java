@@ -382,7 +382,7 @@ public class AuthController {
         if (!user.isVerified()) {
             return ResponseEntity.status(403).body(Map.of(
                     "type", "EMAIL_UNVERIFIED",
-                    "message", "Your account email has not been verified yet. Please check your Outlook inbox.",
+                    "message", "Your account email has not been verified yet. Please check your email inbox (including the spam folder).",
                     "email", user.getEmail()
                     // fullName omitted to prevent account discovery (Finding H2)
             ));
