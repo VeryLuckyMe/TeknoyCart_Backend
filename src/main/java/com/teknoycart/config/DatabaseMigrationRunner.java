@@ -27,6 +27,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String SELLER_CANCEL_VERSION = "V12__seller_cancel_hardening";
     private static final String ADMIN_DISPUTE_VERSION = "V13__admin_dispute_and_order_access";
     private static final String DELETE_ACCOUNT_FIX_VERSION = "V14__delete_account_fix";
+    private static final String STORE_PROFILES_GRANTS_VERSION = "V15__store_profiles_grants";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -132,6 +133,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applySellerCancelMigration();
         applyAdminDisputeMigration();
         applyDeleteAccountFixMigration();
+        applyStoreProfilesGrantsMigration();
     }
 
     private void applyRlsMigration() {
@@ -498,6 +500,37 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
             }
         } catch (Exception e) {
             logger.error("Failed to apply account deletion fix migration: {}", e.getMessage(), e);
+        }
+    }
+
+    private void applyStoreProfilesGrantsMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                STORE_PROFILES_GRANTS_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Store profiles grants migration [{}] is already applied. Skipping DDL on boot.", STORE_PROFILES_GRANTS_VERSION);
+                return;
+            }
+
+            logger.info("Applying store profiles grants migration [{}]...", STORE_PROFILES_GRANTS_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_v15_store_profiles_grants.sql");
+            if (resource.exists()) {
+                String grantsSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(grantsSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    STORE_PROFILES_GRANTS_VERSION
+                );
+                logger.info("Successfully applied store profiles grants migration to database.");
+            } else {
+                logger.warn("Store profiles grants migration script not found in classpath: db/migration_v15_store_profiles_grants.sql");
+            }
+        } catch (Exception e) {
+            logger.error("Failed to apply store profiles grants migration: {}", e.getMessage(), e);
         }
     }
 }
