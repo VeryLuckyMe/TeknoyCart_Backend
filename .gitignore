@@ -28,3 +28,6 @@ serviceAccountKey.json
 __pycache__/
 *.pyc
 
+
+# desloppify local state
+.desloppify/
