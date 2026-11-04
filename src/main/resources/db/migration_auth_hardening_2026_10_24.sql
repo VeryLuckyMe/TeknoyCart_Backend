@@ -377,6 +377,13 @@ BEGIN
         RAISE EXCEPTION 'Only BUYER or SELLER registration is allowed.';
     END IF;
 
+    -- Buyers must use an official @cit.edu institutional email address.
+    -- Sellers (Departments/Orgs and Student Personal Stores) may register with external emails
+    -- because they are gated by mandatory Seller KYC verification upon login.
+    IF NEW.role::text = 'BUYER' AND lower(trim(v_email)) NOT LIKE '%@cit.edu' THEN
+        RAISE EXCEPTION 'Strict Security Policy: Buyers must register with an official @cit.edu email address.';
+    END IF;
+
     NEW.email := v_email;
     NEW.password_hash := 'SUPABASE_AUTH_MANAGED';
     NEW.is_verified := false;

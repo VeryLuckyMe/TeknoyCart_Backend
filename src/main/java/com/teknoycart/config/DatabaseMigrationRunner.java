@@ -4,17 +4,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class DatabaseMigrationRunner implements CommandLineRunner {
+public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicator {
 
     private static final Logger logger = LoggerFactory.getLogger(DatabaseMigrationRunner.class);
+    private final Map<String, String> failedMigrations = new ConcurrentHashMap<>();
 
     private static final String RLS_MIGRATION_VERSION = "V2__comprehensive_rls_lockdown";
     private static final String LIFECYCLE_MIGRATION_VERSION = "V3__order_lifecycle_and_verification";
@@ -28,6 +33,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
     private static final String ADMIN_DISPUTE_VERSION = "V13__admin_dispute_and_order_access";
     private static final String DELETE_ACCOUNT_FIX_VERSION = "V14__delete_account_fix";
     private static final String STORE_PROFILES_GRANTS_VERSION = "V15__store_profiles_grants";
+    private static final String CASCADE_PRODUCT_REVIEWS_VERSION = "V16__cascade_product_reviews";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -134,6 +140,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         applyAdminDisputeMigration();
         applyDeleteAccountFixMigration();
         applyStoreProfilesGrantsMigration();
+        applyCascadeProductReviewsMigration();
     }
 
     private void applyRlsMigration() {
@@ -532,5 +539,49 @@ public class DatabaseMigrationRunner implements CommandLineRunner {
         } catch (Exception e) {
             logger.error("Failed to apply store profiles grants migration: {}", e.getMessage(), e);
         }
+    }
+
+    private void applyCascadeProductReviewsMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                CASCADE_PRODUCT_REVIEWS_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Cascade product reviews migration [{}] is already applied. Skipping DDL on boot.", CASCADE_PRODUCT_REVIEWS_VERSION);
+                return;
+            }
+
+            logger.info("Applying cascade product reviews migration [{}]...", CASCADE_PRODUCT_REVIEWS_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_v16_cascade_product_reviews.sql");
+            if (resource.exists()) {
+                String cascadeSql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(cascadeSql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    CASCADE_PRODUCT_REVIEWS_VERSION
+                );
+                failedMigrations.remove(CASCADE_PRODUCT_REVIEWS_VERSION);
+                logger.info("Successfully applied cascade product reviews migration to database.");
+            } else {
+                failedMigrations.put(CASCADE_PRODUCT_REVIEWS_VERSION, "Script not found in classpath: db/migration_v16_cascade_product_reviews.sql");
+                logger.warn("Cascade product reviews migration script not found in classpath: db/migration_v16_cascade_product_reviews.sql");
+            }
+        } catch (Exception e) {
+            failedMigrations.put(CASCADE_PRODUCT_REVIEWS_VERSION, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            logger.error("Failed to apply cascade product reviews migration: {}", e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public Health health() {
+        if (failedMigrations.isEmpty()) {
+            return Health.up().withDetail("latestVersion", CASCADE_PRODUCT_REVIEWS_VERSION).build();
+        }
+        return Health.status("DEGRADED")
+                .withDetail("failedMigrations", failedMigrations)
+                .build();
     }
 }
