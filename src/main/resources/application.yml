@@ -6,7 +6,7 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 465
-    username: ${SPRING_MAIL_USERNAME:clarencekirkmc@gmail.com}
+    username: ${SPRING_MAIL_USERNAME:teknoycart@gmail.com}
     password: ${SPRING_MAIL_PASSWORD:}
     properties:
       mail:
@@ -57,6 +57,9 @@ jwt:
 brevo:
   api:
     key: ${BREVO_API_KEY:}
+  sender:
+    email: ${BREVO_SENDER_EMAIL:teknoycart@gmail.com}
+    name: ${BREVO_SENDER_NAME:TeknoyCart CIT-U}
 
 supabase:
   url: ${SUPABASE_URL:}
