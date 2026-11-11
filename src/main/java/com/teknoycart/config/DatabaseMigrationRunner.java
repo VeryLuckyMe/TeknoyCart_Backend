@@ -35,6 +35,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     private static final String STORE_PROFILES_GRANTS_VERSION = "V15__store_profiles_grants";
     private static final String CASCADE_PRODUCT_REVIEWS_VERSION = "V16__cascade_product_reviews";
     private static final String CHECKOUT_IDEMPOTENCY_VERSION = "V17__checkout_idempotency";
+    private static final String PAYMENT_EXCEPTIONS_VERSION = "V18__payment_exceptions";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -143,6 +144,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
         applyStoreProfilesGrantsMigration();
         applyCascadeProductReviewsMigration();
         applyCheckoutIdempotencyMigration();
+        applyVersionedScript(PAYMENT_EXCEPTIONS_VERSION, "db/migration_v18_payment_exceptions.sql");
     }
 
     private void applyRlsMigration() {
@@ -611,10 +613,48 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
         }
     }
 
+    /**
+     * Applies one versioned SQL script once, recording it in schema_migrations.
+     * Failures are reported through {@link #health()} rather than aborting boot.
+     */
+    private void applyVersionedScript(String version, String classpathLocation) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                version
+            );
+            if (count != null && count > 0) {
+                logger.info("Migration [{}] is already applied. Skipping DDL on boot.", version);
+                return;
+            }
+
+            ClassPathResource resource = new ClassPathResource(classpathLocation);
+            if (!resource.exists()) {
+                failedMigrations.put(version, "Script not found in classpath: " + classpathLocation);
+                logger.warn("Migration script not found in classpath: {}", classpathLocation);
+                return;
+            }
+
+            logger.info("Applying migration [{}]...", version);
+            String sql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+            jdbcTemplate.execute(sql);
+            jdbcTemplate.update(
+                "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                version
+            );
+            failedMigrations.remove(version);
+            logger.info("Successfully applied migration [{}].", version);
+        } catch (Exception e) {
+            failedMigrations.put(version, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            logger.error("Failed to apply migration [{}]: {}", version, e.getMessage(), e);
+        }
+    }
+
     @Override
     public Health health() {
         if (failedMigrations.isEmpty()) {
-            return Health.up().withDetail("latestVersion", CHECKOUT_IDEMPOTENCY_VERSION).build();
+            return Health.up().withDetail("latestVersion", PAYMENT_EXCEPTIONS_VERSION).build();
         }
         return Health.status("DEGRADED")
                 .withDetail("failedMigrations", failedMigrations)

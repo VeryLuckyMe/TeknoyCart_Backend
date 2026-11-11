@@ -1,17 +1,28 @@
 package com.teknoycart.repositories;
 
 import com.teknoycart.models.Order;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, UUID> {
+
+    /**
+     * Loads an order with a row lock (SELECT ... FOR UPDATE) held until the
+     * transaction ends. Serialises concurrent webhook deliveries for one order.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.id = :id")
+    Optional<Order> findByIdForUpdate(@Param("id") UUID id);
 
     @Query("SELECT o FROM Order o WHERE o.status = :status")
     List<Order> findByStatus(@Param("status") com.teknoycart.models.OrderStatus status);

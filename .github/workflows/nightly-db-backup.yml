@@ -1,0 +1,87 @@
+# Nightly Supabase backup (SRS NFR-10: daily backup at 02:00 PHT, RPO 24 h).
+#
+# Supabase Free has no automatic backups, so this job runs pg_dump every night
+# and keeps 14 days of ENCRYPTED dumps as workflow artifacts. This repository
+# is public: artifacts are downloadable by any signed-in GitHub user, so dumps
+# (student data, RA 10173) are encrypted with AES-256 before upload and are
+# useless without BACKUP_PASSPHRASE.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_DB_URL    Supabase "Session pooler" connection string, e.g.
+#                      postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#                      (The direct db.<ref>.supabase.co host is IPv6-only and
+#                      unreachable from GitHub runners.)
+#   BACKUP_PASSPHRASE  Long random passphrase. Store it somewhere safe outside
+#                      GitHub too: without it, backups cannot be restored.
+#
+# Restore (on your machine):
+#   gpg --batch --pinentry-mode loopback --passphrase "<passphrase>" \
+#       -o teknoycart.dump -d teknoycart_<date>.dump.gpg
+#   pg_restore --no-owner --clean --if-exists -d "<target db url>" teknoycart.dump
+
+name: nightly-db-backup
+
+on:
+  schedule:
+    - cron: '0 18 * * *'   # 18:00 UTC = 02:00 PHT
+  workflow_dispatch:        # "Run workflow" button for a manual backup
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-db-backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: postgres:17   # pg_dump 17 can dump Supabase Postgres 15 and 17
+    steps:
+      - name: Check secrets are configured
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "::error::Set SUPABASE_DB_URL and BACKUP_PASSPHRASE repository secrets."
+            exit 1
+          fi
+
+      - name: Install gpg
+        run: apt-get update -qq && apt-get install -y -qq gnupg > /dev/null
+
+      - name: Dump database (public + auth schemas)
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%F)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          pg_dump "$DB_URL" \
+            --format=custom --no-owner --no-privileges \
+            --schema=public --schema=auth \
+            --file="teknoycart_${STAMP}.dump"
+          # Sanity check: the archive must list tables, or the dump is broken.
+          pg_restore --list "teknoycart_${STAMP}.dump" | grep -q "TABLE DATA public orders"
+          ls -lh "teknoycart_${STAMP}.dump"
+
+      - name: Encrypt dump
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PASSPHRASE" \
+              --symmetric --cipher-algo AES256 \
+              -o "teknoycart_${STAMP}.dump.gpg" "teknoycart_${STAMP}.dump"
+          shred -u "teknoycart_${STAMP}.dump"
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ env.STAMP }}
+          path: teknoycart_${{ env.STAMP }}.dump.gpg
+          retention-days: 14
+          if-no-files-found: error

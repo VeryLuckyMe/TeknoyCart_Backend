@@ -1,18 +1,18 @@
 package com.teknoycart.controllers;
 
-import com.teknoycart.models.PaymentEvent;
-import com.teknoycart.repositories.PaymentEventRepository;
 import com.teknoycart.security.PayMongoSignatureVerifier;
 import com.teknoycart.security.PayMongoSignatureVerifier.PayMongoSignatureException;
-import com.teknoycart.services.OrderService;
+import com.teknoycart.services.PaymentWebhookService;
+import com.teknoycart.services.PaymentWebhookService.Outcome;
+import com.teknoycart.services.PaymentWebhookService.PaidEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -27,17 +27,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 public class PayMongoWebhookControllerTest {
 
-    @Mock
-    private PayMongoSignatureVerifier signatureVerifier;
-
-    @Mock
-    private PaymentEventRepository paymentEventRepository;
-
-    @Mock
-    private OrderService orderService;
-
-    @InjectMocks
-    private PayMongoWebhookController controller;
+    @Mock private PayMongoSignatureVerifier signatureVerifier;
+    @Mock private PaymentWebhookService paymentWebhookService;
+    @InjectMocks private PayMongoWebhookController controller;
 
     private final String webhookSecret = "whsk_test_mock_secret";
 
@@ -47,7 +39,11 @@ public class PayMongoWebhookControllerTest {
         ReflectionTestUtils.setField(controller, "testMode", true);
     }
 
-    private byte[] createSamplePayload(String eventId, String eventType, String orderId, String sessionId, long amount, String currency) {
+    /**
+     * Shape of a real checkout_session.payment.paid webhook: the session has
+     * no top-level amount; the paid amount is under payments[].attributes.
+     */
+    private byte[] payload(String eventId, String eventType, String orderId, String sessionId, long amount) {
         String json = """
         {
           "data": {
@@ -57,108 +53,121 @@ public class PayMongoWebhookControllerTest {
               "type": "%s",
               "data": {
                 "id": "%s",
+                "type": "checkout_session",
                 "attributes": {
-                  "amount": %d,
-                  "currency": "%s",
-                  "metadata": {
-                    "order_id": "%s"
-                  }
+                  "metadata": { "order_id": "%s" },
+                  "line_items": [ { "amount": %d, "currency": "PHP", "quantity": 1 } ],
+                  "payments": [
+                    { "id": "pay_1", "type": "payment",
+                      "attributes": { "amount": %d, "currency": "PHP", "status": "paid" } }
+                  ]
                 }
               }
             }
           }
         }
-        """.formatted(eventId, eventType, sessionId, amount, currency, orderId);
+        """.formatted(eventId, eventType, sessionId, orderId, amount, amount);
         return json.getBytes(StandardCharsets.UTF_8);
     }
 
+    private void signatureOk() {
+        doNothing().when(signatureVerifier).verify(any(), any(), anyString(), anyBoolean());
+    }
+
     @Test
-    @DisplayName("Valid signature and paid checkout event moves order to ESCROWED and returns 200 OK")
-    void testValidPaidWebhookSuccess() {
+    @DisplayName("Paid event is parsed from payments[] and handed to the service; PROCESSED -> 200 OK")
+    void paidEventProcessed() {
         UUID orderId = UUID.randomUUID();
-        String eventId = "evt_paid_123";
-        String sessionId = "cs_test_session_123";
-        byte[] rawBody = createSamplePayload(eventId, "checkout_session.payment.paid", orderId.toString(), sessionId, 15000, "PHP");
+        signatureOk();
+        when(paymentWebhookService.process(any())).thenReturn(Outcome.PROCESSED);
 
-        doNothing().when(signatureVerifier).verify(anyString(), any(byte[].class), eq(webhookSecret), eq(true));
-
-        ResponseEntity<String> response = controller.handleWebhook("t=123,te=abc", rawBody);
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=x",
+                payload("evt_1", "checkout_session.payment.paid", orderId.toString(), "cs_1", 15000));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("OK", response.getBody());
 
-        verify(paymentEventRepository, atLeastOnce()).save(any(PaymentEvent.class));
-        verify(orderService, times(1)).markEscrowed(eq(orderId), eq(sessionId));
+        ArgumentCaptor<PaidEvent> captor = ArgumentCaptor.forClass(PaidEvent.class);
+        verify(paymentWebhookService).process(captor.capture());
+        PaidEvent e = captor.getValue();
+        assertEquals("evt_1", e.eventId());
+        assertEquals(orderId.toString(), e.rawOrderId());
+        assertEquals("cs_1", e.sessionId());
+        assertEquals(15000L, e.amountCentavos());
+        assertEquals("PHP", e.currency());
     }
 
     @Test
-    @DisplayName("Invalid signature returns 403 Forbidden without processing payload")
-    void testInvalidSignatureReturns403() {
-        byte[] rawBody = "{}".getBytes(StandardCharsets.UTF_8);
+    @DisplayName("Invalid signature returns 403 without processing")
+    void invalidSignature() {
         doThrow(new PayMongoSignatureException("Bad signature"))
                 .when(signatureVerifier).verify(any(), any(), anyString(), anyBoolean());
 
-        ResponseEntity<String> response = controller.handleWebhook("t=1,te=bad", rawBody);
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=bad", "{}".getBytes(StandardCharsets.UTF_8));
 
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
-        assertEquals("Invalid signature", response.getBody());
-
-        verify(paymentEventRepository, never()).save(any());
-        verify(orderService, never()).markEscrowed(any(), any());
+        verifyNoInteractions(paymentWebhookService);
     }
 
     @Test
-    @DisplayName("Malformed JSON returns 400 Bad Request")
-    void testMalformedJsonReturns400() {
-        byte[] malformedBody = "{not-json}".getBytes(StandardCharsets.UTF_8);
-        doNothing().when(signatureVerifier).verify(any(), any(), anyString(), anyBoolean());
+    @DisplayName("Malformed JSON returns 400")
+    void malformedJson() {
+        signatureOk();
 
-        ResponseEntity<String> response = controller.handleWebhook("t=1,te=valid", malformedBody);
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=x", "{not-json}".getBytes(StandardCharsets.UTF_8));
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        verify(orderService, never()).markEscrowed(any(), any());
+        verifyNoInteractions(paymentWebhookService);
     }
 
     @Test
-    @DisplayName("Unrelated event type returns 200 OK and is ignored")
-    void testUnrelatedEventTypeIgnored() {
-        byte[] rawBody = createSamplePayload("evt_456", "payment.failed", UUID.randomUUID().toString(), "cs_456", 10000, "PHP");
-        doNothing().when(signatureVerifier).verify(any(), any(), anyString(), anyBoolean());
+    @DisplayName("Unrelated event type is ignored with 200")
+    void unrelatedEventIgnored() {
+        signatureOk();
 
-        ResponseEntity<String> response = controller.handleWebhook("t=1,te=valid", rawBody);
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=x",
+                payload("evt_2", "payment.failed", UUID.randomUUID().toString(), "cs_2", 100));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertTrue(response.getBody().contains("Ignored"));
-        verify(orderService, never()).markEscrowed(any(), any());
+        verifyNoInteractions(paymentWebhookService);
     }
 
     @Test
-    @DisplayName("Duplicate event ID (DataIntegrityViolationException) returns 200 and ignores duplicate")
-    void testDuplicateWebhookIdempotent() {
-        UUID orderId = UUID.randomUUID();
-        byte[] rawBody = createSamplePayload("evt_dup_789", "checkout_session.payment.paid", orderId.toString(), "cs_dup", 10000, "PHP");
-        doNothing().when(signatureVerifier).verify(any(), any(), anyString(), anyBoolean());
-        doThrow(new DataIntegrityViolationException("Duplicate event key"))
-                .when(paymentEventRepository).save(any(PaymentEvent.class));
+    @DisplayName("DUPLICATE -> 200")
+    void duplicate() {
+        signatureOk();
+        when(paymentWebhookService.process(any())).thenReturn(Outcome.DUPLICATE);
 
-        ResponseEntity<String> response = controller.handleWebhook("t=1,te=valid", rawBody);
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=x",
+                payload("evt_3", "checkout_session.payment.paid", UUID.randomUUID().toString(), "cs_3", 100));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Duplicate event ignored", response.getBody());
-        verify(orderService, never()).markEscrowed(any(), any());
     }
 
     @Test
-    @DisplayName("Non-PHP currency fails validation and does not call markEscrowed")
-    void testNonPhpCurrencyValidationFails() {
-        UUID orderId = UUID.randomUUID();
-        byte[] rawBody = createSamplePayload("evt_usd", "checkout_session.payment.paid", orderId.toString(), "cs_usd", 10000, "USD");
-        doNothing().when(signatureVerifier).verify(any(), any(), anyString(), anyBoolean());
+    @DisplayName("FLAGGED (mismatch) -> 200, because a retry cannot fix it")
+    void flagged() {
+        signatureOk();
+        when(paymentWebhookService.process(any())).thenReturn(Outcome.FLAGGED);
 
-        ResponseEntity<String> response = controller.handleWebhook("t=1,te=valid", rawBody);
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=x",
+                payload("evt_4", "checkout_session.payment.paid", UUID.randomUUID().toString(), "cs_4", 100));
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertTrue(response.getBody().contains("Validation failed"));
-        verify(orderService, never()).markEscrowed(any(), any());
+        assertEquals("Recorded for admin review", response.getBody());
+    }
+
+    @Test
+    @DisplayName("Processing error -> 500 so PayMongo redelivers")
+    void processingErrorReturns500() {
+        signatureOk();
+        when(paymentWebhookService.process(any())).thenThrow(new RuntimeException("db down"));
+
+        ResponseEntity<String> response = controller.handleWebhook("t=1,te=x",
+                payload("evt_5", "checkout_session.payment.paid", UUID.randomUUID().toString(), "cs_5", 100));
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
     }
 }
