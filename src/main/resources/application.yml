@@ -49,6 +49,18 @@ management:
     web:
       exposure:
         include: health
+  endpoint:
+    health:
+      # Lists each component's UP/DOWN status (no details or secrets) so a
+      # DOWN result shows which part failed.
+      show-components: always
+      show-details: never
+  health:
+    # Email is sent through the Brevo HTTP API (EmailService), not SMTP.
+    # The auto-configured SMTP check tries smtp.gmail.com:465, which Render's
+    # free plan blocks, so it reported the whole backend as DOWN.
+    mail:
+      enabled: false
 
 jwt:
   secret: ${JWT_SECRET:}

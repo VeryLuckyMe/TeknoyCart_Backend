@@ -34,6 +34,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     private static final String DELETE_ACCOUNT_FIX_VERSION = "V14__delete_account_fix";
     private static final String STORE_PROFILES_GRANTS_VERSION = "V15__store_profiles_grants";
     private static final String CASCADE_PRODUCT_REVIEWS_VERSION = "V16__cascade_product_reviews";
+    private static final String CHECKOUT_IDEMPOTENCY_VERSION = "V17__checkout_idempotency";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -141,6 +142,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
         applyDeleteAccountFixMigration();
         applyStoreProfilesGrantsMigration();
         applyCascadeProductReviewsMigration();
+        applyCheckoutIdempotencyMigration();
     }
 
     private void applyRlsMigration() {
@@ -575,10 +577,44 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
         }
     }
 
+    private void applyCheckoutIdempotencyMigration() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM public.schema_migrations WHERE version = ?",
+                Integer.class,
+                CHECKOUT_IDEMPOTENCY_VERSION
+            );
+
+            if (count != null && count > 0) {
+                logger.info("Checkout idempotency migration [{}] is already applied. Skipping DDL on boot.", CHECKOUT_IDEMPOTENCY_VERSION);
+                return;
+            }
+
+            logger.info("Applying checkout idempotency migration [{}]...", CHECKOUT_IDEMPOTENCY_VERSION);
+            ClassPathResource resource = new ClassPathResource("db/migration_v17_checkout_idempotency.sql");
+            if (resource.exists()) {
+                String sql = StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+                jdbcTemplate.execute(sql);
+                jdbcTemplate.update(
+                    "INSERT INTO public.schema_migrations (version) VALUES (?) ON CONFLICT (version) DO NOTHING;",
+                    CHECKOUT_IDEMPOTENCY_VERSION
+                );
+                failedMigrations.remove(CHECKOUT_IDEMPOTENCY_VERSION);
+                logger.info("Successfully applied checkout idempotency migration to database.");
+            } else {
+                failedMigrations.put(CHECKOUT_IDEMPOTENCY_VERSION, "Script not found in classpath: db/migration_v17_checkout_idempotency.sql");
+                logger.warn("Checkout idempotency migration script not found in classpath: db/migration_v17_checkout_idempotency.sql");
+            }
+        } catch (Exception e) {
+            failedMigrations.put(CHECKOUT_IDEMPOTENCY_VERSION, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            logger.error("Failed to apply checkout idempotency migration: {}", e.getMessage(), e);
+        }
+    }
+
     @Override
     public Health health() {
         if (failedMigrations.isEmpty()) {
-            return Health.up().withDetail("latestVersion", CASCADE_PRODUCT_REVIEWS_VERSION).build();
+            return Health.up().withDetail("latestVersion", CHECKOUT_IDEMPOTENCY_VERSION).build();
         }
         return Health.status("DEGRADED")
                 .withDetail("failedMigrations", failedMigrations)
