@@ -42,6 +42,7 @@ public class OrderService {
     private static final Duration GUARANTEE_INSPECTION_WINDOW = Duration.ofHours(24);
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    static final java.time.Duration EXPIRY_RECONCILE_GRACE = java.time.Duration.ofMinutes(15);
 
     @Value("${paymongo.checkout-ttl-minutes:30}")
     private int checkoutTtlMinutes;
@@ -868,7 +869,11 @@ public class OrderService {
     @Scheduled(fixedRate = 300_000)
     @Transactional
     public void expireAwaitingPayments() {
-        List<Order> expired = orderRepository.findExpiredAwaitingPayment(Instant.now());
+        // Grace period: a buyer who paid seconds before expiry may have had their
+        // webhook missed. PaymentReconciliationService (every 10 min) gets a chance
+        // to escrow the order before it is reverted.
+        List<Order> expired = orderRepository.findExpiredAwaitingPayment(
+                Instant.now().minus(EXPIRY_RECONCILE_GRACE));
         for (Order order : expired) {
             if (order.getStatus() != OrderStatus.AWAITING_PAYMENT) continue; // race guard
             OrderStatus oldStatus = order.getStatus();

@@ -236,7 +236,7 @@ public class PayMongoPaymentServiceTest {
         Order order = createOrder(OrderStatus.AWAITING_PAYMENT, "GCASH", new BigDecimal("100.00"));
         order.setPaymongoCheckoutSessionId("cs_expired");
         order.setPaymongoCheckoutUrl("https://checkout.url");
-        order.setPaymentExpiresAt(Instant.now().minusSeconds(10));
+        order.setPaymentExpiresAt(Instant.now().minus(OrderService.EXPIRY_RECONCILE_GRACE).minusSeconds(10));
         order = orderRepository.save(order);
 
         orderService.expireAwaitingPayments();
@@ -246,6 +246,21 @@ public class PayMongoPaymentServiceTest {
         assertNull(reloaded.getPaymongoCheckoutSessionId());
         assertNull(reloaded.getPaymongoCheckoutUrl());
         assertNull(reloaded.getPaymentExpiresAt());
+    }
+
+    @Test
+    @DisplayName("expireAwaitingPayments: Leaves recently-expired orders for reconciliation (grace period)")
+    void testExpireAwaitingPaymentsRespectsGrace() {
+        Order order = createOrder(OrderStatus.AWAITING_PAYMENT, "GCASH", new BigDecimal("100.00"));
+        order.setPaymongoCheckoutSessionId("cs_just_expired");
+        order.setPaymentExpiresAt(Instant.now().minusSeconds(60));
+        order = orderRepository.save(order);
+
+        orderService.expireAwaitingPayments();
+
+        Order reloaded = orderRepository.findById(order.getId()).orElseThrow();
+        assertEquals(OrderStatus.AWAITING_PAYMENT, reloaded.getStatus());
+        assertEquals("cs_just_expired", reloaded.getPaymongoCheckoutSessionId());
     }
 
     @Test

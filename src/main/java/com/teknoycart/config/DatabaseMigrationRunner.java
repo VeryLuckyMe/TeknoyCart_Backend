@@ -36,6 +36,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     private static final String CASCADE_PRODUCT_REVIEWS_VERSION = "V16__cascade_product_reviews";
     private static final String CHECKOUT_IDEMPOTENCY_VERSION = "V17__checkout_idempotency";
     private static final String PAYMENT_EXCEPTIONS_VERSION = "V18__payment_exceptions";
+    private static final String ADMIN_EXCEPTIONS_SECURE_OTP_VERSION = "V19__admin_payment_exceptions_and_secure_otp";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -145,6 +146,8 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
         applyCascadeProductReviewsMigration();
         applyCheckoutIdempotencyMigration();
         applyVersionedScript(PAYMENT_EXCEPTIONS_VERSION, "db/migration_v18_payment_exceptions.sql");
+        applyVersionedScript(ADMIN_EXCEPTIONS_SECURE_OTP_VERSION,
+                "db/migration_v19_admin_payment_exceptions_and_secure_otp.sql");
     }
 
     private void applyRlsMigration() {
@@ -654,7 +657,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     @Override
     public Health health() {
         if (failedMigrations.isEmpty()) {
-            return Health.up().withDetail("latestVersion", PAYMENT_EXCEPTIONS_VERSION).build();
+            return Health.up().withDetail("latestVersion", ADMIN_EXCEPTIONS_SECURE_OTP_VERSION).build();
         }
         return Health.status("DEGRADED")
                 .withDetail("failedMigrations", failedMigrations)
