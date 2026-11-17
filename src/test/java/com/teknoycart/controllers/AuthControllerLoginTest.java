@@ -85,6 +85,48 @@ public class AuthControllerLoginTest {
     }
 
     @Test
+    @DisplayName("pollKey from send-verification reports verified only after the link is clicked")
+    void pollKeyReportsVerificationStatus() {
+        User user = new User();
+        user.setEmail("poll@cit.edu");
+        user.setFullName("Poll Student");
+        user.setPasswordHash("SUPABASE_AUTH_MANAGED");
+        user.setRole("BUYER");
+        userRepository.save(user);
+        var tokenCaptor = forClass(String.class);
+        when(emailService.sendVerificationEmail(eq("poll@cit.edu"), anyString(), tokenCaptor.capture()))
+            .thenReturn(CompletableFuture.completedFuture(true));
+
+        ResponseEntity<?> sent = authController.sendVerificationEmail(Map.of("email", "poll@cit.edu"), null, null);
+        String pollKey = (String) ((Map<?, ?>) sent.getBody()).get("pollKey");
+        assertNotNull(pollKey);
+
+        ResponseEntity<?> before = authController.verificationStatus(pollKey);
+        assertEquals(200, before.getStatusCode().value());
+        assertEquals(false, ((Map<?, ?>) before.getBody()).get("verified"));
+
+        authController.verifyUser(tokenCaptor.getValue());
+
+        ResponseEntity<?> after = authController.verificationStatus(pollKey);
+        assertEquals(true, ((Map<?, ?>) after.getBody()).get("verified"));
+    }
+
+    @Test
+    @DisplayName("Tampered, expired or missing poll keys are rejected")
+    void badPollKeysAreRejected() {
+        UUID id = UUID.randomUUID();
+        String expired = authController.createPollKey(id, java.time.Instant.now().minusSeconds(5));
+        String valid = authController.createPollKey(id, java.time.Instant.now().plusSeconds(600));
+        String tampered = authController.createPollKey(UUID.randomUUID(), java.time.Instant.now().plusSeconds(600))
+            .split("\\.")[0] + "." + valid.split("\\.")[1];
+
+        assertEquals(401, authController.verificationStatus(expired).getStatusCode().value());
+        assertEquals(401, authController.verificationStatus(tampered).getStatusCode().value());
+        assertEquals(401, authController.verificationStatus("garbage").getStatusCode().value());
+        assertEquals(401, authController.verificationStatus("a.b!!").getStatusCode().value());
+    }
+
+    @Test
     @DisplayName("Verification token is hashed at rest and the emailed token verifies the account")
     void verificationTokenIsHashedAndCanVerify() {
         User user = new User();

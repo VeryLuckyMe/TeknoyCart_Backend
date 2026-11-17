@@ -100,7 +100,8 @@ public class AuthController {
             if (sent) {
                 return ResponseEntity.ok(Map.of(
                         "message", "Verification email sent successfully!",
-                        "expiresAt", expiresAt.toString()));
+                        "expiresAt", expiresAt.toString(),
+                        "pollKey", createPollKey(user.getUserId(), now.plus(POLL_KEY_LIFETIME))));
             }
         } catch (TimeoutException e) {
             logger.warn("Verification email dispatch timed out");
@@ -118,6 +119,24 @@ public class AuthController {
                 .body(Map.of(
                         "type", "EMAIL_DELIVERY_FAILED",
                         "message", "Verification email could not be sent. Please try again later."));
+    }
+
+    /**
+     * Lets the app's "check your email" screen notice when the link was
+     * clicked. The caller must hold the pollKey returned by send-verification,
+     * so nobody can probe whether an arbitrary email exists or is verified.
+     */
+    @GetMapping("/verification-status")
+    public ResponseEntity<?> verificationStatus(@RequestParam("key") String key) {
+        Optional<UUID> userId = readPollKey(key);
+        if (userId.isEmpty()) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("type", "INVALID_POLL_KEY"));
+        }
+        boolean verified = userRepository.findById(userId.get())
+                .map(User::isVerified)
+                .orElse(false);
+        return ResponseEntity.ok(Map.of("verified", verified));
     }
 
     @GetMapping("/verify")
@@ -192,6 +211,47 @@ public class AuthController {
             return Base64.getUrlEncoder().withoutPadding().encodeToString(token);
         } catch (java.security.GeneralSecurityException e) {
             throw new IllegalStateException("Unable to create verification token", e);
+        }
+    }
+
+    private static final Duration POLL_KEY_LIFETIME = Duration.ofMinutes(30);
+
+    /** pollKey = base64url(userId:expiryEpoch) + "." + base64url(HMAC). Stateless, no DB column. */
+    String createPollKey(UUID userId, Instant expiresAt) {
+        String payload = userId + ":" + expiresAt.getEpochSecond();
+        Base64.Encoder enc = Base64.getUrlEncoder().withoutPadding();
+        return enc.encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + "." + enc.encodeToString(pollSignature(payload));
+    }
+
+    Optional<UUID> readPollKey(String key) {
+        try {
+            if (key == null) return Optional.empty();
+            int dot = key.indexOf('.');
+            if (dot <= 0) return Optional.empty();
+            Base64.Decoder dec = Base64.getUrlDecoder();
+            String payload = new String(dec.decode(key.substring(0, dot)), StandardCharsets.UTF_8);
+            byte[] given = dec.decode(key.substring(dot + 1));
+            if (!MessageDigest.isEqual(given, pollSignature(payload))) return Optional.empty();
+            String[] parts = payload.split(":");
+            if (parts.length != 2) return Optional.empty();
+            if (Instant.now().getEpochSecond() > Long.parseLong(parts[1])) return Optional.empty();
+            return Optional.of(UUID.fromString(parts[0]));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
+    private byte[] pollSignature(String payload) {
+        if (verificationTokenSecret == null
+                || verificationTokenSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT_SECRET must contain at least 32 bytes to issue poll keys");
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(verificationTokenSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return mac.doFinal(("verification-poll:" + payload).getBytes(StandardCharsets.UTF_8));
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException("Unable to sign poll key", e);
         }
     }
 
