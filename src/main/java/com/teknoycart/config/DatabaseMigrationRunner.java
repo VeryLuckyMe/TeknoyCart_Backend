@@ -38,6 +38,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     private static final String PAYMENT_EXCEPTIONS_VERSION = "V18__payment_exceptions";
     private static final String ADMIN_EXCEPTIONS_SECURE_OTP_VERSION = "V19__admin_payment_exceptions_and_secure_otp";
     private static final String NEGOTIATED_DEALS_VERSION = "V20__negotiated_deals";
+    private static final String GCASH_GUARD_ORDER_BADGES_VERSION = "V21__gcash_guard_and_order_badges";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -151,6 +152,8 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
                 "db/migration_v19_admin_payment_exceptions_and_secure_otp.sql");
         applyVersionedScript(NEGOTIATED_DEALS_VERSION,
                 "db/migration_v20_negotiated_deals.sql");
+        applyVersionedScript(GCASH_GUARD_ORDER_BADGES_VERSION,
+                "db/migration_v21_gcash_guard_and_order_badges.sql");
     }
 
     private void applyRlsMigration() {
@@ -660,7 +663,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     @Override
     public Health health() {
         if (failedMigrations.isEmpty()) {
-            return Health.up().withDetail("latestVersion", NEGOTIATED_DEALS_VERSION).build();
+            return Health.up().withDetail("latestVersion", GCASH_GUARD_ORDER_BADGES_VERSION).build();
         }
         return Health.status("DEGRADED")
                 .withDetail("failedMigrations", failedMigrations)
