@@ -39,6 +39,7 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
     private static final String ADMIN_EXCEPTIONS_SECURE_OTP_VERSION = "V19__admin_payment_exceptions_and_secure_otp";
     private static final String NEGOTIATED_DEALS_VERSION = "V20__negotiated_deals";
     private static final String GCASH_GUARD_ORDER_BADGES_VERSION = "V21__gcash_guard_and_order_badges";
+    private static final String PLAIN_NOTIFICATION_TITLES_VERSION = "V22__plain_notification_titles";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -154,6 +155,8 @@ public class DatabaseMigrationRunner implements CommandLineRunner, HealthIndicat
                 "db/migration_v20_negotiated_deals.sql");
         applyVersionedScript(GCASH_GUARD_ORDER_BADGES_VERSION,
                 "db/migration_v21_gcash_guard_and_order_badges.sql");
+        applyVersionedScript(PLAIN_NOTIFICATION_TITLES_VERSION,
+                "db/migration_v22_plain_notification_titles.sql");
     }
 
     private void applyRlsMigration() {
