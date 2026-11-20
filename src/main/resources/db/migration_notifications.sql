@@ -178,7 +178,7 @@ BEGIN
                     dedupe_key, delivery_channels, push_status, email_status
                 ) VALUES (
                     v_seller_id,
-                    '📦 New Order Received',
+                    'New Order Received',
                     'A buyer placed an order for ' || v_product_name || '. Please review and accept.',
                     'ORDER_STATUS',
                     v_order_id::TEXT,
@@ -242,7 +242,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_seller_id,
-                        '💰 Payment Secured in Escrow',
+                        'Payment Secured in Escrow',
                         'Payment for ' || v_product_name || ' has been confirmed and secured in escrow. Prepare the item for meetup!',
                         'PAYMENT',
                         v_order_id::TEXT,
@@ -262,7 +262,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_buyer_id,
-                        '📅 Meetup Scheduled',
+                        'Meetup Scheduled',
                         'Meetup details confirmed for ' || v_product_name || ' at CIT-U.',
                         'ORDER_STATUS',
                         v_order_id::TEXT,
@@ -282,7 +282,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_buyer_id,
-                        '🤝 Ready for Handoff',
+                        'Ready for Handoff',
                         'Item ' || v_product_name || ' is ready. Exchange the OTP code with the seller at meetup.',
                         'ORDER_STATUS',
                         v_order_id::TEXT,
@@ -302,7 +302,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_buyer_id,
-                        'Order Completed ✓',
+                        'Order Completed',
                         'Your purchase of ' || v_product_name || ' is complete. Leave a review to help fellow Wildcats!',
                         'ORDER_STATUS',
                         v_order_id::TEXT,
@@ -321,7 +321,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_seller_id,
-                        'Sale Completed ✓',
+                        'Sale Completed',
                         'Handoff verified! Payout for ' || v_product_name || ' is being released. Great job!',
                         'ORDER_STATUS',
                         v_order_id::TEXT,
@@ -379,7 +379,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_buyer_id,
-                        '⚠️ Order Under Review',
+                        'Order Under Review',
                         'A dispute was raised on ' || v_product_name || '. Our team is reviewing the case.',
                         'ORDER_STATUS',
                         v_order_id::TEXT,
@@ -397,7 +397,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_seller_id,
-                        '⚠️ Order Under Review',
+                        'Order Under Review',
                         'A dispute was raised on ' || v_product_name || '. Payout is paused pending mediation.',
                         'ORDER_STATUS',
                         v_order_id::TEXT,
@@ -435,7 +435,7 @@ BEGIN
                         dedupe_key, delivery_channels, push_status, email_status
                     ) VALUES (
                         v_buyer_id,
-                        'Refund Completed ✓',
+                        'Refund Completed',
                         'Your refund for ' || v_product_name || ' has been completed.',
                         'PAYMENT',
                         v_order_id::TEXT,
@@ -526,7 +526,7 @@ BEGIN
                     email_status
                 ) VALUES (
                     v_admin_record.user_id,
-                    '📋 New Seller Application',
+                    'New Seller Application',
                     v_applicant_name || ' submitted KYC verification (' || COALESCE(NEW.seller_type, 'STUDENT') || ') for administrative review.',
                     'KYC',
                     NEW.id::TEXT,
@@ -553,7 +553,7 @@ BEGIN
                     dedupe_key, delivery_channels, push_status, email_status
                 ) VALUES (
                     NEW.user_id,
-                    '🎉 Seller Verification Approved!',
+                    'Seller Verification Approved!',
                     'You are now an authorized CIT-U vendor. You can now post listings and accept orders!',
                     'KYC',
                     NEW.id::TEXT,

@@ -65,7 +65,7 @@ BEGIN
             email_status
         ) VALUES (
             NEW.seller_id,
-            '⭐ New Review Received',
+            'New Review Received',
             'A buyer rated ' || v_product_name || ' ' || NEW.rating::TEXT ||
                 ' out of 5. Tap to view and reply.',
             'REVIEW',
