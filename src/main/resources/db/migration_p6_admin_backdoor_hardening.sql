@@ -135,7 +135,7 @@ BEGIN
                     email_status
                 ) VALUES (
                     v_admin_record.user_id,
-                    '📋 New Seller Application',
+                    'New Seller Application',
                     v_applicant_name || ' submitted KYC verification (' || COALESCE(NEW.seller_type, 'STUDENT') || ') for administrative review.',
                     'KYC',
                     NEW.id::TEXT,
@@ -162,7 +162,7 @@ BEGIN
                     dedupe_key, delivery_channels, push_status, email_status
                 ) VALUES (
                     NEW.user_id,
-                    '🎉 Seller Verification Approved!',
+                    'Seller Verification Approved!',
                     'You are now an authorized CIT-U vendor. You can now post listings and accept orders!',
                     'KYC',
                     NEW.id::TEXT,
